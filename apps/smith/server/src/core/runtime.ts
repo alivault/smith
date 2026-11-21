@@ -22,7 +22,6 @@ import {
   type Registry,
 } from "@earendil-works/pi-durable"
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode"
-import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node"
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 
@@ -36,6 +35,7 @@ import { createMcpExtension, type McpExtension } from "../extensions/mcp.ts"
 import { createPromptExtension } from "../extensions/prompt.ts"
 import { createWebAccessExtension } from "../extensions/web-access.ts"
 import { createSmithCodingTools } from "./coding-tools.ts"
+import { executionEnv } from "./env.ts"
 import { compactionSettings, modelCompactionPolicy } from "./compaction.ts"
 import { ResourceCache } from "./resources.ts"
 import { SmithSettings } from "./settings.ts"
@@ -209,7 +209,7 @@ export async function openRuntime(
       models,
       registry,
       settings: harnessSettings,
-      env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? homedir() }),
+      env: ({ cwd }) => executionEnv(cwd),
       onReport: (error) => console.warn("[smith] durable report:", error),
     },
     BACKGROUND_CONTEXT

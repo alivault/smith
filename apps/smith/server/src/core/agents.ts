@@ -28,6 +28,7 @@ import {
   defineDoc,
   InboxDoc,
   LiveDoc,
+  SystemEntry,
   type AgentState,
   type CommitPublication,
   type Conversation,
@@ -109,6 +110,8 @@ import {
 } from "./queue.ts"
 import { expandPromptTemplate, expandSkillCommand } from "./resources.ts"
 import type { Runtime } from "./runtime.ts"
+import { executionEnv } from "./env.ts"
+import { SYSTEM_PROMPT_KIND, systemPromptOf } from "./system-prompt.ts"
 import type { DraftSelection, Viewers } from "./viewers.ts"
 
 const ctx = BACKGROUND_CONTEXT
@@ -831,6 +834,9 @@ export class Agents implements HostAgents {
         this.#noteEntry(id, entry)
         this.#closeQuestionOf(id, entry)
         this.#markDirty(id, { entries: true })
+        // A changed system prompt: the Agent panel shows it.
+        if (SystemEntry.is(entry))
+          this.extensionStateChanged(id, SYSTEM_PROMPT_KIND)
       } else if (change.type === "document") {
         if (
           change.conversationId === undefined &&
@@ -1021,6 +1027,37 @@ export class Agents implements HostAgents {
     const files = (await this.#runtime.resources.get(this.meta(id).cwd))
       .agentsFiles
     return files.map(({ path }) => ({ path }))
+  }
+
+  /**
+   * The system prompt of an agent, section by section: as the model got it,
+   * or, before the first request, as the next request renders it.
+   */
+  async systemPrompt(id: string) {
+    const meta = this.meta(id)
+    const conversation = await this.conversation(id)
+    const [view, agent] = await Promise.all([
+      conversation.context(ctx),
+      conversation.agent(ctx),
+    ])
+    const cwd = agent.cwd ?? meta.cwd
+    const resources = await this.#runtime.resources
+      .get(cwd)
+      .catch((error: unknown) => {
+        console.warn("[smith] could not read the prompt resources:", error)
+        return undefined
+      })
+    return systemPromptOf({
+      cwd,
+      messages: view.messages,
+      agent,
+      env: () => executionEnv(agent.cwd),
+      read: this.#harness,
+      conversationId: conversation.id,
+      resources,
+      agentDir: this.#runtime.agentDir,
+      context: ctx,
+    })
   }
 
   /** The content of one context file that the agent of an agent loads. */
