@@ -200,6 +200,8 @@ function InstructionsSection({
   const [openFile, setOpenFile] = React.useState<string | null>(null)
   const [openSection, setOpenSection] = React.useState<{
     id?: string
+    /** For the project context: only the global or the project files. */
+    scope?: "global" | "project"
     title: string
   } | null>(null)
   const prompt = query.data
@@ -228,10 +230,12 @@ function InstructionsSection({
                   onClick={() =>
                     setOpenSection({
                       id: part.section.id,
-                      title:
-                        part.section.id === "project_context"
-                          ? "Project context: global and project instructions"
-                          : part.title,
+                      ...(part.key === "project_context:global"
+                        ? { scope: "global" as const }
+                        : part.key === "project_context:project"
+                          ? { scope: "project" as const }
+                          : {}),
+                      title: part.title,
                     })
                   }
                 >
@@ -323,7 +327,14 @@ function InstructionsSection({
           }}
           title={openSection.title}
           path={SYSTEM_PROMPT_PATH}
-          searchParams={openSection.id ? { section: openSection.id } : {}}
+          searchParams={
+            openSection.id
+              ? {
+                  section: openSection.id,
+                  ...(openSection.scope ? { scope: openSection.scope } : {}),
+                }
+              : {}
+          }
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}

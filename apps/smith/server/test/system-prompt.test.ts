@@ -258,6 +258,19 @@ void test("GET /api/agent/system-prompt returns the sections and one section", a
     }
     assert.equal(one.text, `<cwd>\n${project}\n</cwd>`)
     assert.equal((await fetch(`${url}&section=nothing`)).status, 404)
+    // The global and the project rows show only their own files.
+    const scoped = async (scope: string) =>
+      (
+        (await (
+          await fetch(`${url}&section=project_context&scope=${scope}`)
+        ).json()) as { text: string }
+      ).text
+    const globalText = await scoped("global")
+    const projectText = await scoped("project")
+    assert.ok(projectText.includes("Project rule: say hi."))
+    assert.ok(!globalText.includes("Project rule: say hi."))
+    assert.equal(globalText.match(/<project_instructions /g)?.length, 1)
+    assert.equal(projectText.match(/<project_instructions /g)?.length, 1)
   } finally {
     child.kill("SIGTERM")
     await exited
