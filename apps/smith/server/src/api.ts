@@ -2165,6 +2165,25 @@ export function createApi(api: ApiContext) {
     return { ok: true, id: scratchId, text }
   })
 
+  /** Delete one scratch entry (`id`) or all of them (`all=1`). */
+  router.delete("/api/agent/scratch", async (request) => {
+    const id = requireAgent(request)
+    const scratch = runtime.extensions.scratch
+    const conversationId = conversationIdOf(id)
+    let deleted: number
+    if (request.query.get("all") === "1") {
+      deleted = await scratch.clear(conversationId)
+    } else {
+      const scratchId = stringField(request.query.get("id"))
+      if (!scratchId) throw badRequest("id or all=1 is required")
+      if (!(await scratch.delete(conversationId, scratchId)))
+        throw notFound(`No scratch entry ${scratchId}`)
+      deleted = 1
+    }
+    agents.extensionStateChanged(id, "scratch")
+    return { ok: true, deleted }
+  })
+
   router.get("/api/agent/instructions", async (request) => {
     const path = stringField(request.query.get("path"))
     if (!path) throw badRequest("path is required")
