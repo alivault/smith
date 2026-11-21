@@ -251,6 +251,9 @@ function agentLabel(services: Pick<HostServices, "agents">, id: string) {
   return name ? `agent ${current} ("${name}")` : `agent ${current}`
 }
 
+/** The longest terminal wait: a long wait keeps the agent working. */
+const MAX_WAIT_MS = 300_000
+
 function describeWait(job: Job, result: WaitResult) {
   switch (result.type) {
     case "match": {
@@ -272,7 +275,9 @@ function describeWait(job: Job, result: WaitResult) {
     case "timeout":
       return job.waiting
         ? `Timed out. The job still waits for input: ${job.waiting.prompt || "(empty)"}`
-        : "Timed out. The job still runs."
+        : job.notifyOnExit
+          ? "Timed out. The job still runs. Do not wait again: end your turn, and its exit message starts a new turn."
+          : "Timed out. The job still runs."
     case "aborted":
       return "The wait was stopped."
   }
@@ -1438,7 +1443,7 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
       "The user can watch it live in the terminal panel. Use the terminal tool to list jobs, read their output, stop them, read the screen, wait for output, type into them, or bring in the user.",
       "With notify_on_exit (default true), you get a message with the exit code and the last output when it ends, also while you are busy (at your next turn boundary).",
       "Set wait_on_exit (default false) when you continue your work after the job ends, for example a build or a test run: until then you show as waiting, not done. Do not set it for a job that runs until it is stopped, such as a dev server or a watcher. wait_on_exit also sets notify_on_exit.",
-      "You do not need to wait or poll: do other work, or end your turn, and the exit message starts a new turn. Use the terminal tool's wait only for a line of output (for example 'ready'), or when you cannot do anything else until the job ends.",
+      "You do not need to wait or poll: do other work, or end your turn, and the exit message starts a new turn. To wait for the job to end, end your turn, also when you have nothing else to do. Use the terminal tool's wait only for a line of output that comes soon (for example 'ready').",
       "With interactive, the command shows as a live terminal in the chat, where the user types (a login, a password, a choice that is the user's), and the call returns when the command exits. Give a short prompt for the user.",
     ].join(" "),
     parameters: Type.Object({
@@ -1627,7 +1632,7 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
       } else match = (line) => line.includes(pattern)
     }
     const timeoutMs = Math.min(
-      1_800_000,
+      MAX_WAIT_MS,
       Math.max(0, args.timeout_ms ?? 60_000)
     )
     const result = await runner.waitFor(job.id, {
@@ -1707,7 +1712,7 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
     description: [
       "Use terminals: your jobs (from job_start or open), the running jobs of other agents in this project, and the user's terminal tabs of this agent.",
       "Another agent's job is read only (list, output, read, wait), except the jobs of your subagents and of archived agents that no agent above controls: you may also stop them, type into them, and close them.",
-      'Actions: list (all, with memory; with id, one job and its last output); output (the log of a job: the last `tail` lines, default 80, lines from `from_line`, or only lines that match `grep`); stop (stop a job: SIGTERM, then SIGKILL); open (a shell, or `command`, in a new terminal; it is a job); read (source visible: the screen now, for full-screen programs; recent: the last `lines` with scrollback); wait (until a line matches `pattern`, the job waits for input, or exits; to only wait for the exit of a job that reports it, end your turn instead); send_text (type `text`, with `enter` to press Enter); send_keys (`keys`, for example ["up", "enter"] or ["ctrl+c"]); focus (bring the user to the terminal with `prompt`, only when the user is needed: a password, a login, a choice that is the user\'s); close (remove a finished job and its log).',
+      'Actions: list (all, with memory; with id, one job and its last output); output (the log of a job: the last `tail` lines, default 80, lines from `from_line`, or only lines that match `grep`); stop (stop a job: SIGTERM, then SIGKILL); open (a shell, or `command`, in a new terminal; it is a job); read (source visible: the screen now, for full-screen programs; recent: the last `lines` with scrollback); wait (until a line matches `pattern`, the job waits for input, or exits; at most 5 minutes; to wait for the exit of a job that reports it, end your turn instead); send_text (type `text`, with `enter` to press Enter); send_keys (`keys`, for example ["up", "enter"] or ["ctrl+c"]); focus (bring the user to the terminal with `prompt`, only when the user is needed: a password, a login, a choice that is the user\'s); close (remove a finished job and its log).',
       "send_text and send_keys refuse when the terminal hides input: a secret is for the user. You can read the user's terminals, but not type in them.",
     ].join(" "),
     parameters: Type.Object({
@@ -1746,7 +1751,7 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
       regex: Type.Optional(Type.Boolean()),
       new_only: Type.Optional(Type.Boolean()),
       timeout_ms: Type.Optional(
-        Type.Number({ description: "wait: default 60000, max 1800000" })
+        Type.Number({ description: "wait: default 60000, max 300000" })
       ),
       text: Type.Optional(Type.String()),
       enter: Type.Optional(Type.Boolean()),
