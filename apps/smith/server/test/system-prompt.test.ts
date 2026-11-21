@@ -258,6 +258,23 @@ void test("GET /api/agent/system-prompt returns the sections and one section", a
     }
     assert.equal(one.text, `<cwd>\n${project}\n</cwd>`)
     assert.equal((await fetch(`${url}&section=nothing`)).status, 404)
+    // An open file viewer sends the version it has: no content while the
+    // file is the same.
+    const readUrl = `http://127.0.0.1:${port}/api/files/read?cwd=${encodeURIComponent(project)}&path=AGENTS.md`
+    const read = (await (await fetch(readUrl)).json()) as {
+      content: string
+      version: string
+    }
+    assert.ok(read.content.length > 0)
+    const same = (await (
+      await fetch(`${readUrl}&version=${encodeURIComponent(read.version)}`)
+    ).json()) as { unchanged?: boolean; content?: string }
+    assert.equal(same.unchanged, true)
+    assert.equal(same.content, undefined)
+    const other = (await (await fetch(`${readUrl}&version=old`)).json()) as {
+      content: string
+    }
+    assert.equal(other.content, read.content)
     // The global and the project rows show only their own files.
     const scoped = async (scope: string) =>
       (

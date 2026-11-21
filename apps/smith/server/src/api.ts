@@ -858,7 +858,19 @@ export function createApi(api: ApiContext) {
     const requested = stringField(request.query.get("cwd"))
     if (!requested) throw badRequest("cwd is required")
     const cwd = await files.resolveDirectory(requested, baseCwd(request))
-    return { ok: true, cwd, ...(await files.readProjectFile(cwd, path)) }
+    const file = await files.readProjectFile(cwd, path)
+    // An open viewer checks its file often: with the version it has, the
+    // answer has no content while the file is the same.
+    const known = stringField(request.query.get("version"))
+    if (known && known === file.version)
+      return {
+        ok: true,
+        cwd,
+        path: file.path,
+        version: file.version,
+        unchanged: true,
+      }
+    return { ok: true, cwd, ...file }
   })
 
   // Which paths are files inside cwd, for links to files in the

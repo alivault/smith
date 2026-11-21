@@ -23,7 +23,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeftIcon,
   FileDiffIcon,
@@ -200,6 +200,73 @@ function projectFileReadQueryOptions({
     staleTime: PROJECT_FILE_QUERY_STALE_TIME_MS,
     gcTime: PROJECT_FILE_QUERY_GC_TIME_MS,
   }
+}
+
+const FOLLOW_FILE_INTERVAL_MS = 2000
+
+/**
+ * Keep an open file current while an agent (or anything else) changes it.
+ * The git events do not cover it: they fire only when `git status` changes,
+ * so a second edit of a changed file, or an ignored file, sends nothing.
+ * Every two seconds while the page shows, ask the server with the version
+ * that the viewer has; the answer has the content only when it changed. A
+ * draft with unsaved changes keeps its own text: the editor shows that the
+ * file changed on disk.
+ */
+function useFollowProjectFile({
+  machineId,
+  viewerContextId,
+  cwd,
+  path,
+  version,
+  enabled,
+}: {
+  machineId: string
+  viewerContextId: string
+  cwd: string
+  path: string
+  version: string | undefined
+  enabled: boolean
+}) {
+  const queryClient = useQueryClient()
+  const versionRef = useLatestRef(version)
+  React.useEffect(() => {
+    if (!enabled) return
+    let stopped = false
+    let busy = false
+    const check = async () => {
+      const known = versionRef.current
+      if (busy || !known || document.visibilityState !== "visible") return
+      busy = true
+      try {
+        const data = await fetchJson<
+          ProjectFileReadData | { ok: true; version: string; unchanged: true }
+        >(
+          buildRequestUrl(
+            `/api/files/read?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(path)}&version=${encodeURIComponent(known)}`,
+            { machineId, contextId: viewerContextId }
+          )
+        )
+        if (stopped || "unchanged" in data || data.version === known) return
+        queryClient.setQueryData(
+          smithQueryKeys.projectFileRead(viewerContextId, cwd, path),
+          data
+        )
+      } catch {
+        // A deleted or unreadable file: the next open shows the error.
+      } finally {
+        busy = false
+      }
+    }
+    const timer = window.setInterval(
+      () => void check(),
+      FOLLOW_FILE_INTERVAL_MS
+    )
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [enabled, machineId, viewerContextId, cwd, path, queryClient, versionRef])
 }
 
 const GIT_FILE_TREE_UNSAFE_CSS = `
@@ -756,6 +823,14 @@ export function ProjectFileContent({
     }),
     enabled: Boolean(active && viewerContextId && normalizedCwd && path),
     notifyOnChangeProps: ["data", "isPending", "error"],
+  })
+  useFollowProjectFile({
+    machineId,
+    viewerContextId,
+    cwd: normalizedCwd,
+    path,
+    version: fileQuery.data?.version,
+    enabled: Boolean(active && viewerContextId && normalizedCwd && path),
   })
   const editing = useProjectFileEditing({
     machineId,
