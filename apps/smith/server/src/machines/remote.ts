@@ -27,7 +27,13 @@ const DISCOVER_SCRIPT = [
   "IFS=:",
   "for d in $P; do",
   '  [ -n "$d" ] || continue',
-  '  [ -x "$d/node" ] && echo "node=$d $("$d/node" -v 2>/dev/null)"',
+  // A shim folder (vite-plus, volta, mise) has no npm next to its node, so
+  // report the folder of the real node binary, which has npm.
+  '  if [ -x "$d/node" ]; then',
+  '    r=$("$d/node" -e "process.stdout.write(process.execPath)" 2>/dev/null)',
+  '    case "$r" in */node) r="${r%/node}" ;; *) r="$d" ;; esac',
+  '    echo "node=$r $("$d/node" -v 2>/dev/null)"',
+  "  fi",
   '  [ -x "$d/smith" ] && echo "smith=$d/smith"',
   "done",
   "exit 0",
