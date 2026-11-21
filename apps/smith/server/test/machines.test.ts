@@ -25,6 +25,7 @@ import { allowedRemotePath, machineRoute } from "../src/machines/proxy.ts"
 import { applyStatePatch, OfflineCache } from "../src/machines/offline-cache.ts"
 import {
   isAuthFailure,
+  cacheFromDiscovery,
   parseDiscovery,
   pickNode,
   smithCommand,
@@ -183,6 +184,22 @@ void test("remote discovery picks a new enough node and the first smith", () => 
       "--data-dir",
       "/d",
     ]
+  )
+  // The PATH of an SSH command stays, after the node, so that commands on
+  // NixOS find git in /run/current-system/sw/bin.
+  const nix = parseDiscovery(
+    "path=/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin\nnode=/n v24.0.0"
+  )
+  assert.equal(
+    nix.path,
+    "/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin"
+  )
+  const nixCache = cacheFromDiscovery(nix)
+  assert.equal(
+    smithCommand({ ...nixCache, smithPath: "/p/smith" }, { dataDir: null }, [
+      "status",
+    ])[1],
+    "PATH=/n:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/usr/local/bin:/bin"
   )
   assert.ok(isAuthFailure("ali@workbox: Permission denied (publickey)."))
   assert.ok(isAuthFailure("Host key verification failed."))

@@ -345,7 +345,8 @@ export class MachineConnection {
     try {
       await this.#transport.connect(attempt.signal)
       let cache = readCache(this.#dir)
-      if (!cache.smithPath || !cache.nodeDir) {
+      // A cache from before shellPath searches again one time.
+      if (!cache.smithPath || !cache.nodeDir || cache.shellPath === undefined) {
         cache = cacheFromDiscovery(
           await discover(this.#transport, attempt.signal),
           cache

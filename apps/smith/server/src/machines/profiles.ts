@@ -35,6 +35,8 @@ export type MachineCache = {
   nodeVersion?: string
   /** The remote `smith` command. */
   smithPath?: string
+  /** The PATH of an SSH command there; absent in a cache from before. */
+  shellPath?: string
   port?: number
   version?: string
 }
@@ -193,6 +195,7 @@ export function readCache(dir: string): MachineCache {
     ] as const) {
       if (typeof value[key] === "string" && value[key]) cache[key] = value[key]
     }
+    if (typeof value.shellPath === "string") cache.shellPath = value.shellPath
     if (typeof value.port === "number" && Number.isInteger(value.port))
       cache.port = value.port
     return cache

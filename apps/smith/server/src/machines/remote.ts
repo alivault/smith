@@ -19,6 +19,10 @@ export const HUB_FEATURE = "machine-hub"
 
 /** No single quotes: the script goes to the remote shell in single quotes. */
 const DISCOVER_SCRIPT = [
+  // The PATH of an SSH command, before the search adds to it. Commands on
+  // the remote machine keep it, so they find git and other tools (on NixOS
+  // they are not in /usr/bin).
+  'echo "path=$PATH"',
   // Smith installs into ~/.local, so its smith comes first.
   'P="$HOME/.local/bin:$PATH"',
   'for d in "$HOME/.volta/bin" "$HOME/.local/share/mise/shims" "$HOME/.local/share/pnpm" "$HOME/Library/pnpm" "$HOME/.bun/bin" /opt/homebrew/bin /usr/local/bin "$HOME"/.nvm/versions/node/*/bin "$HOME"/.local/share/mise/installs/node/*/bin "$HOME"/.local/share/fnm/node-versions/*/installation/bin; do P="$P:$d"; done',
@@ -45,6 +49,8 @@ export type Discovery = {
   /** Directories with a `node`, and the version of each, in PATH order. */
   nodes: Array<{ dir: string; version: string }>
   smiths: string[]
+  /** The PATH of an SSH command on the remote machine. */
+  path?: string
 }
 
 export function parseDiscovery(stdout: string): Discovery {
@@ -56,6 +62,7 @@ export function parseDiscovery(stdout: string): Discovery {
     const value = line.slice(index + 1).trim()
     if (key === "os") result.os = value
     else if (key === "home") result.home = value
+    else if (key === "path") result.path = value
     else if (key === "node") {
       const space = value.lastIndexOf(" ")
       const dir = space > 0 ? value.slice(0, space) : value
@@ -121,12 +128,28 @@ export function cacheFromDiscovery(
   delete cache.nodeVersion
   delete cache.smithPath
   if (discovery.os) cache.os = discovery.os
+  cache.shellPath = discovery.path ?? ""
   if (node) {
     cache.nodeDir = node.dir
     cache.nodeVersion = node.version
   }
   if (discovery.smiths[0]) cache.smithPath = discovery.smiths[0]
   return cache
+}
+
+/**
+ * The PATH of remote commands: the found `node` first, then the PATH of an
+ * SSH command there, then the usual system folders.
+ */
+export function remotePath(cache: Pick<MachineCache, "nodeDir" | "shellPath">) {
+  const dirs = [
+    cache.nodeDir,
+    ...(cache.shellPath ?? "").split(":"),
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ].filter((dir): dir is string => Boolean(dir))
+  return [...new Set(dirs)].join(":")
 }
 
 /** A `smith` command with the found `node` in `PATH`. */
@@ -139,7 +162,7 @@ export function smithCommand(
     throw new Error("smith or node was not found on the remote machine")
   return [
     "env",
-    `PATH=${cache.nodeDir}:/usr/local/bin:/usr/bin:/bin`,
+    `PATH=${remotePath(cache)}`,
     "SMITH_OPEN=0",
     cache.smithPath,
     ...args,
@@ -262,7 +285,7 @@ export async function installRemote(
     [
       "sh",
       "-c",
-      `PATH="${nodeDir}:/usr/local/bin:/usr/bin:/bin"; exec npm install --global --prefix "$HOME/.local" @alivault/smith@${version}`,
+      `PATH="${nodeDir}:$PATH:/usr/local/bin:/usr/bin:/bin"; exec npm install --global --prefix "$HOME/.local" @alivault/smith@${version}`,
     ],
     { timeoutMs: 10 * 60_000 }
   )
