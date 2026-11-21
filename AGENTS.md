@@ -14,6 +14,8 @@
 - The route keeps one `SmithAppShell` per opened machine in a React `Activity` (`routes/index.tsx`). Floating UI renders into a per-shell portal container (`components/ui/portal-container.tsx`).
 - Import `toast` from `@/lib/smith/toast`, not from `sonner`. The wrapper merges the toasts about an offline machine into one.
 - Window state stays out of the shells: one copy for the page. The left sidebar is `WindowSidebar` (`features/smith/window-sidebar.tsx`), drawn one time in the route with a heading for each machine. The shown shell fills its slots with portals (`features/smith/sidebar-slots.ts`). The theme store (`use-smith-theme.ts`) and the machines dialog are also window level. Machine actions take a machine ID; do not show them only for the shown machine.
+- The sidebar draws the shown machine from its shell (live rows) and the other machines from their hub summaries. Both read the same view state of a machine (`features/smith/sidebar-view-state.ts`: collapsed projects, "Show N more", project state filters) and the same stored projects and pins, so a machine looks the same when it opens or closes. Do not keep this state in a component.
+- Web unit tests: `src/**/*.test.ts`, run with `pnpm exec vp test run` from `apps/smith` (also part of `pnpm check`). Import from `vite-plus/test`.
 
 ## Tooling
 

@@ -3935,7 +3935,11 @@ export function SmithAppShell({
     null
   )
 
-  React.useEffect(() => {
+  // A layout effect, also when the hidden shell of the machine shows again:
+  // the sidebar rows of the machine then read the projects and pins that
+  // the window changed while another machine showed, before the browser
+  // paints (see `sidebar-view-state.ts`).
+  React.useLayoutEffect(() => {
     const storedContext = window.localStorage.getItem(
       VIEWER_CONTEXT_STORAGE_KEY
     )
