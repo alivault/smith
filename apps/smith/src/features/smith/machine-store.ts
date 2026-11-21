@@ -45,6 +45,11 @@ export type MachineAgentSummary = {
   parent?: string
   lastMessageAt?: number
   lastUserMessageAt?: number
+  /** The git branch of the agent's own worktree. */
+  worktreeBranch?: string
+  lastMessagePreview?: string
+  /** While the agent works: when its current turn started. */
+  turnStartedAt?: number
 }
 
 export type MachineInfo = {

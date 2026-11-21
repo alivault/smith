@@ -71,6 +71,12 @@ export type AgentStatusSummary = {
   parent?: string
   lastMessageAt?: number
   lastUserMessageAt?: number
+  /** The git branch of the agent's own worktree. */
+  worktreeBranch?: string
+  /** The start of the agent's last message, for the preview setting. */
+  lastMessagePreview?: string
+  /** While the agent works: when its current turn started. */
+  turnStartedAt?: number
 }
 
 /** What a server tells a hub about its agents. */
@@ -201,6 +207,16 @@ export function parseSummary(value: unknown): MachineSummary | undefined {
             : {}),
           ...(typeof entry.lastUserMessageAt === "number"
             ? { lastUserMessageAt: entry.lastUserMessageAt }
+            : {}),
+          ...(typeof entry.worktreeBranch === "string" && entry.worktreeBranch
+            ? { worktreeBranch: entry.worktreeBranch }
+            : {}),
+          ...(typeof entry.lastMessagePreview === "string" &&
+          entry.lastMessagePreview
+            ? { lastMessagePreview: entry.lastMessagePreview }
+            : {}),
+          ...(typeof entry.turnStartedAt === "number"
+            ? { turnStartedAt: entry.turnStartedAt }
             : {}),
         },
       ]

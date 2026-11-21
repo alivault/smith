@@ -2640,6 +2640,13 @@ function machineSummaryEntry(agent: MachineAgentSummary): AgentListEntry {
     ...(agent.jobs ? { jobs: agent.jobs } : {}),
     unread: isMachineAgentUnread(agent),
     ...(agent.parent ? { parent: agent.parent } : {}),
+    ...(agent.worktreeBranch ? { worktreeBranch: agent.worktreeBranch } : {}),
+    ...(agent.lastMessagePreview
+      ? { lastMessagePreview: agent.lastMessagePreview }
+      : {}),
+    ...(agent.turnStartedAt
+      ? { turnStartedAt: new Date(agent.turnStartedAt).toISOString() }
+      : {}),
   }
 }
 

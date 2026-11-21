@@ -81,6 +81,17 @@ export function localSummary(
           ...(meta.lastUserMessageAt
             ? { lastUserMessageAt: meta.lastUserMessageAt }
             : {}),
+          // The details of a live sidebar row, so that another machine's
+          // rows look the same as when it is the open machine.
+          ...(agent.worktreeBranch
+            ? { worktreeBranch: agent.worktreeBranch }
+            : {}),
+          ...(agent.lastMessagePreview
+            ? { lastMessagePreview: agent.lastMessagePreview }
+            : {}),
+          ...(agent.busy && meta.turnStartedAt
+            ? { turnStartedAt: meta.turnStartedAt }
+            : {}),
         }
       }),
   }
