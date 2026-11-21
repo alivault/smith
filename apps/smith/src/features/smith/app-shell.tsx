@@ -3363,14 +3363,6 @@ function useAppShellAgentWorkspaceView({
         },
       },
       {
-        id: "show-resources",
-        group: "Workspace",
-        title: "Show resources",
-        description: "Memory of the server, terminals, jobs, and the browser",
-        keywords: ["resources", "memory", "ram", "jobs", "processes"],
-        onSelect: () => emitSmithEvent("smith:open-resources", {}),
-      },
-      {
         id: "commit-changes",
         group: "Git",
         title: "Commit changes",
