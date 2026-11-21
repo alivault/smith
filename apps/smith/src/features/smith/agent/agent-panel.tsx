@@ -51,6 +51,11 @@ export type AgentSection = {
   busy?(state: AgentExtensionState): boolean
   /** A short count or status next to the title, such as "2 of 5 done". */
   summary?(state: AgentExtensionState): string | undefined
+  /**
+   * A summary that needs its own data, such as a fetched total. It takes the
+   * place of `summary`. Render a short text in a `span`.
+   */
+  Summary?: React.ComponentType<AgentSectionProps>
   /** Small controls at the right of the header, such as an add button. */
   Actions?: React.ComponentType<AgentSectionProps>
   Component: React.ComponentType<AgentSectionProps>
@@ -193,7 +198,7 @@ function AgentSectionView({
   sectionProps: AgentSectionProps
 }) {
   const summary = section.summary?.(sectionProps.state)
-  const { Actions, Component } = section
+  const { Actions, Component, Summary } = section
   return (
     <Collapsible
       open={open}
@@ -214,7 +219,11 @@ function AgentSectionView({
             <span className="shrink-0 text-xs font-bold tracking-[0.04em] text-muted-foreground uppercase">
               {section.title}
             </span>
-            {summary ? (
+            {Summary ? (
+              <span className="min-w-0 truncate text-xs text-muted-foreground/80 tabular-nums">
+                <Summary {...sectionProps} />
+              </span>
+            ) : summary ? (
               <span className="min-w-0 truncate text-xs text-muted-foreground/80 tabular-nums">
                 {summary}
               </span>

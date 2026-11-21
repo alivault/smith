@@ -1,13 +1,14 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import {
-  ChevronRightIcon,
-  FileTextIcon,
-  ScrollTextIcon,
-  WrenchIcon,
-} from "lucide-react"
+import { ChevronRightIcon, FileTextIcon } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import {
   registerAgentSection,
@@ -18,13 +19,16 @@ import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 import { useSmithEvent } from "@/features/smith/agent/events"
 import {
-  cacheNote,
   contextShare,
   formatTokens,
-  methodLabel,
+  partColor,
+  promptFooter,
+  shareWidths,
+  TOOLS_COLOR,
   type PromptTokens,
   type TokenCount,
 } from "@/features/smith/agent/prompt-tokens"
+import { cn } from "@/lib/utils"
 
 /** The context files (AGENTS.md) that the agent loads. */
 type Instructions = { cwd: string; files: Array<{ path: string }> }
@@ -159,134 +163,9 @@ function partsOf(sections: PromptSection[]): Part[] {
   return parts
 }
 
-/** A token count at the right of a row. */
-function Tokens({ count }: { count: TokenCount | undefined }) {
-  if (!count) return null
-  return (
-    <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
-      {formatTokens(count)}
-    </span>
-  )
-}
-
-/** The total, its share of the context window, and the cache note. */
-function TokenSummary({ tokens }: { tokens: PromptTokens }) {
-  const share = contextShare(tokens.total.tokens, tokens.model?.contextWindow)
-  const note = cacheNote(tokens)
-  return (
-    <div className="space-y-0.5 px-1.5">
-      <p className="text-xs text-foreground/90 tabular-nums">
-        System prompt and tools · {formatTokens(tokens.total)} tokens
-        {share ? ` · ${share} of context` : ""}
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {methodLabel(tokens)}
-        {note ? ` ${note}` : ""}
-      </p>
-    </div>
-  )
-}
-
-/** The tool definitions that each request sends; opens to list them. */
-function ToolsRow({ index, tokens }: { index: number; tokens: PromptTokens }) {
-  const [open, setOpen] = React.useState(false)
-  const { items, overhead, total } = tokens.tools
-  if (items.length === 0) return null
-  return (
-    <li>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-label={`Tools: ${items.length}`}
-        className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="w-4 shrink-0 text-right text-xs leading-5 text-muted-foreground tabular-nums">
-          {index}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="truncate text-sm">Tools ({items.length})</span>
-            <ChevronRightIcon
-              aria-hidden="true"
-              className={`size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
-            />
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            Name, description, and input schema of each tool
-          </span>
-        </span>
-        <Tokens count={total} />
-      </button>
-      {open ? (
-        <ul className="pb-1">
-          {items.map((tool) => (
-            <li
-              key={tool.name}
-              className="flex h-6 min-w-0 items-center gap-2 pr-1.5 pl-7 text-sm"
-            >
-              <WrenchIcon
-                aria-hidden="true"
-                className="size-3.5 shrink-0 text-muted-foreground"
-              />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                {tool.name}
-              </span>
-              <Tokens count={tool} />
-            </li>
-          ))}
-          {overhead && overhead.tokens > 0 ? (
-            <li className="flex h-6 min-w-0 items-center gap-2 pr-1.5 pl-7 text-sm">
-              <span className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                Tool use overhead
-              </span>
-              <Tokens count={overhead} />
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
-    </li>
-  )
-}
-
-function FileRow({
-  path,
-  cwd,
-  onOpen,
-  indent = false,
-}: {
-  path: string
-  cwd: string
-  onOpen: (path: string) => void
-  indent?: boolean
-}) {
-  return (
-    <TitleTooltip title={path}>
-      <button
-        type="button"
-        aria-label={`Show ${path}`}
-        className={`flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 ${indent ? "pl-7" : ""}`}
-        onClick={() => onOpen(path)}
-      >
-        <FileTextIcon
-          aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
-        />
-        <span className="min-w-0 flex-1 truncate">{labelOf(path, cwd)}</span>
-      </button>
-    </TitleTooltip>
-  )
-}
-
-function InstructionsSection({
-  onOpenFile,
-  agentId,
-  state,
-  viewerContextId,
-}: AgentSectionProps) {
+/** The data of the section: the prompt, and its exact counts when they come. */
+function useSystemPrompt(agentId: string, viewerContextId: string) {
   const machineId = useMachineId()
-  const instructions = instructionsOf(state)
   const query = useQuery({
     queryKey: ["smith", "system-prompt", viewerContextId, agentId],
     queryFn: () =>
@@ -325,108 +204,366 @@ function InstructionsSection({
     if (detail.agentId === agentId && detail.kind === "system_prompt")
       void query.refetch()
   })
+  const tokens =
+    (pending ? exactQuery.data?.tokens : undefined) ?? query.data?.tokens
+  return { query, prompt: query.data, tokens }
+}
+
+/** The total in the section header, with the share of the context window. */
+function InstructionsSummary({
+  agentId,
+  state,
+  viewerContextId,
+}: AgentSectionProps) {
+  const { tokens } = useSystemPrompt(agentId, viewerContextId)
+  if (!tokens) {
+    // Until the counts load, or from an older server: the files.
+    const count = instructionsOf(state)?.files.length ?? 0
+    return count > 0
+      ? `${count} ${count === 1 ? "file" : "files"}`
+      : "System prompt"
+  }
+  const text = `${formatTokens(tokens.total)} tokens`
+  const window = tokens.model?.contextWindow
+  const share = contextShare(tokens.total.tokens, window)
+  if (!share || !window) return text
+  const size = formatTokens({ tokens: window, exact: true })
+  return (
+    <TitleTooltip
+      title={`System prompt ${formatTokens(tokens.prompt)} and tools ${formatTokens(tokens.tools.total)}: ${share} of the ${size} context window`}
+    >
+      <span>{text}</span>
+    </TitleTooltip>
+  )
+}
+
+/** One part of the share bar. */
+type Segment = { key: string; tokens: number; color: string }
+
+/** One thin bar with a colored part for each count, as in Storage. */
+function ShareBar({ segments }: { segments: Segment[] }) {
+  const widths = shareWidths(segments.map((segment) => segment.tokens))
+  if (!widths.some((width) => width > 0)) return null
+  return (
+    <div
+      aria-hidden="true"
+      className="mx-1.5 flex h-1.5 gap-px overflow-hidden rounded-full bg-muted"
+    >
+      {segments.map((segment, index) =>
+        widths[index] > 0 ? (
+          <span
+            key={segment.key}
+            className={cn("h-full min-w-0", segment.color)}
+            style={{ flex: `${widths[index]} 1 0%` }}
+          />
+        ) : null
+      )}
+    </div>
+  )
+}
+
+/** A small uppercase header with the total of its group at the right. */
+function GroupHeader({
+  title,
+  count,
+}: {
+  title: string
+  count: TokenCount | undefined
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 px-1.5 pb-0.5 text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
+      <span>{title}</span>
+      {count ? (
+        <span className="normal-case tabular-nums">{formatTokens(count)}</span>
+      ) : null}
+    </div>
+  )
+}
+
+function GroupFooter({ children }: { children: React.ReactNode }) {
+  return <p className="px-1.5 pt-1 text-xs text-muted-foreground">{children}</p>
+}
+
+const ROW_CLASS =
+  "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm outline-none"
+
+/**
+ * One line of a group: color dot, name, muted suffix, count, and a chevron
+ * when it opens something.
+ */
+function Row({
+  color,
+  name,
+  suffix,
+  count,
+  label,
+  onClick,
+}: {
+  color?: string
+  name: string
+  suffix?: string
+  count?: TokenCount
+  label?: string
+  onClick?: () => void
+}) {
+  const content = (
+    <>
+      <span
+        aria-hidden="true"
+        className={cn("size-2 shrink-0 rounded-full", color)}
+      />
+      <span className="flex min-w-0 flex-1 items-baseline gap-1">
+        {/* The suffix gets cut off first, then the name. */}
+        <span className="max-w-full shrink-0 truncate">{name}</span>
+        {suffix ? (
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            · {suffix}
+          </span>
+        ) : null}
+      </span>
+      {count ? (
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {formatTokens(count)}
+        </span>
+      ) : null}
+      <ChevronRightIcon
+        aria-hidden="true"
+        className={cn(
+          "size-3.5 shrink-0 text-muted-foreground",
+          !onClick && "invisible"
+        )}
+      />
+    </>
+  )
+  return (
+    <li>
+      {onClick ? (
+        <button
+          type="button"
+          aria-label={label}
+          className={cn(
+            ROW_CLASS,
+            "hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+          )}
+          onClick={onClick}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={ROW_CLASS}>{content}</div>
+      )}
+    </li>
+  )
+}
+
+/** The tool definitions that each request sends, with their counts. */
+function ToolsDialog({
+  tokens,
+  onOpenChange,
+}: {
+  tokens: PromptTokens
+  onOpenChange: (open: boolean) => void
+}) {
+  const { items } = tokens.tools
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Tools ({items.length})</DialogTitle>
+          <DialogDescription>
+            The name, description, and input schema of each tool. Each request
+            sends them.
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="max-h-[60vh] overflow-auto rounded-md border p-1">
+          {items.map((tool) => (
+            <li
+              key={tool.name}
+              className="flex h-7 min-w-0 items-center gap-2 px-1.5 text-sm"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                {tool.name}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {formatTokens(tool)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** The tools group: the tool definitions and the overhead of tool use. */
+function ToolsGroup({ tokens }: { tokens: PromptTokens }) {
+  const [open, setOpen] = React.useState(false)
+  const { items, overhead, total } = tokens.tools
+  if (items.length === 0) return null
+  const shownOverhead = overhead && overhead.tokens > 0 ? overhead : undefined
+  const listed = shownOverhead
+    ? { tokens: total.tokens - shownOverhead.tokens, exact: total.exact }
+    : total
+  return (
+    <section aria-label="Tools">
+      <GroupHeader title="Tools" count={total} />
+      <ul>
+        <Row
+          color={TOOLS_COLOR}
+          name={`Tools (${items.length})`}
+          count={listed}
+          label={`Show the ${items.length} tools`}
+          onClick={() => setOpen(true)}
+        />
+        {shownOverhead ? (
+          <Row
+            color={cn(TOOLS_COLOR, "opacity-50")}
+            name="Tool use overhead"
+            count={shownOverhead}
+          />
+        ) : null}
+      </ul>
+      <GroupFooter>Sent with every request.</GroupFooter>
+      {open ? <ToolsDialog tokens={tokens} onOpenChange={setOpen} /> : null}
+    </section>
+  )
+}
+
+/** A short list of files under a title in a dialog header. */
+function FileLinks({
+  files,
+  cwd,
+  onOpen,
+}: {
+  files: string[]
+  cwd: string
+  onOpen: (path: string) => void
+}) {
+  return files.map((path) => (
+    <TitleTooltip key={path} title={path}>
+      <button
+        type="button"
+        aria-label={`Show ${path}`}
+        className="inline-flex min-w-0 items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-3 outline-none hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+        onClick={() => onOpen(path)}
+      >
+        <FileTextIcon aria-hidden="true" className="size-3.5 shrink-0" />
+        <span className="truncate">{labelOf(path, cwd)}</span>
+      </button>
+    </TitleTooltip>
+  ))
+}
+
+function FileRow({
+  path,
+  cwd,
+  onOpen,
+}: {
+  path: string
+  cwd: string
+  onOpen: (path: string) => void
+}) {
+  return (
+    <TitleTooltip title={path}>
+      <button
+        type="button"
+        aria-label={`Show ${path}`}
+        className={cn(
+          ROW_CLASS,
+          "hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+        )}
+        onClick={() => onOpen(path)}
+      >
+        <FileTextIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground"
+        />
+        <span className="min-w-0 flex-1 truncate">{labelOf(path, cwd)}</span>
+      </button>
+    </TitleTooltip>
+  )
+}
+
+function InstructionsSection({
+  onOpenFile,
+  agentId,
+  state,
+  viewerContextId,
+}: AgentSectionProps) {
+  const instructions = instructionsOf(state)
+  const { query, prompt, tokens } = useSystemPrompt(agentId, viewerContextId)
   const [openFile, setOpenFile] = React.useState<string | null>(null)
-  const [openSection, setOpenSection] = React.useState<{
-    id?: string
-    /** For the project context: only the global or the project files. */
-    scope?: "global" | "project"
-    title: string
-  } | null>(null)
-  const prompt = query.data
+  /** The key of the open part, or null for the full system prompt. */
+  const [openPart, setOpenPart] = React.useState<string | null | undefined>()
   const cwd = prompt?.cwd ?? instructions?.cwd ?? ""
   const open = (path: string) => {
     // A file outside the agent folder opens from its absolute path.
     const relative = relativePath(path, cwd)
+    setOpenPart(undefined)
     if (onOpenFile) onOpenFile(relative ?? path)
     else setOpenFile(path)
   }
   const parts = prompt ? partsOf(prompt.sections) : []
-  const tokens =
-    (pending ? exactQuery.data?.tokens : undefined) ?? prompt?.tokens
+  const countOf = (part: Part) =>
+    tokens?.parts[part.key] ?? tokens?.parts[part.section.id]
+  const part = parts.find((item) => item.key === openPart)
+  const tools = tokens?.tools
+  const overhead =
+    tools?.overhead && tools.overhead.tokens > 0 ? tools.overhead : undefined
+  const segments: Segment[] = [
+    ...parts.map((item, index) => ({
+      key: item.key,
+      tokens: countOf(item)?.tokens ?? 0,
+      color: partColor(index),
+    })),
+    ...(tools && tools.items.length > 0
+      ? [
+          {
+            key: "tools",
+            tokens: tools.total.tokens - (overhead?.tokens ?? 0),
+            color: TOOLS_COLOR,
+          },
+          {
+            key: "tools:overhead",
+            tokens: overhead?.tokens ?? 0,
+            color: cn(TOOLS_COLOR, "opacity-50"),
+          },
+        ]
+      : []),
+  ]
+  const partCount = part ? countOf(part) : undefined
   return (
     <>
       {prompt ? (
-        <div className="space-y-2">
-          {tokens ? <TokenSummary tokens={tokens} /> : null}
-          <div className="px-1.5 text-xs font-medium text-muted-foreground">
-            What the agent gets, in order
-          </div>
-          <ol className="space-y-0.5">
-            {parts.map((part, index) => (
-              <li key={part.key}>
-                <button
-                  type="button"
-                  aria-label={`Show ${part.title}`}
-                  className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-                  onClick={() =>
-                    setOpenSection({
-                      id: part.section.id,
-                      ...(part.key === "project_context:global"
-                        ? { scope: "global" as const }
-                        : part.key === "project_context:project"
-                          ? { scope: "project" as const }
-                          : {}),
-                      title: part.title,
-                    })
+        <div className="space-y-3 pt-1">
+          {tokens ? <ShareBar segments={segments} /> : null}
+          <section aria-label="System prompt">
+            <GroupHeader title="System prompt" count={tokens?.prompt} />
+            <ul>
+              {parts.map((item, index) => (
+                <Row
+                  key={item.key}
+                  color={partColor(index)}
+                  name={item.title}
+                  suffix={
+                    item.files.length > 0
+                      ? item.files.map((path) => labelOf(path, cwd)).join(", ")
+                      : undefined
                   }
-                >
-                  <span className="w-4 shrink-0 text-right text-xs leading-5 text-muted-foreground tabular-nums">
-                    {index + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="max-w-full shrink-0 truncate text-sm">
-                        {part.title}
-                      </span>
-                      {part.section.tagged ? (
-                        <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-muted-foreground">
-                          {`<${part.section.id}>`}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {part.description}
-                    </span>
-                  </span>
-                  <Tokens
-                    count={
-                      tokens?.parts[part.key] ?? tokens?.parts[part.section.id]
-                    }
-                  />
-                </button>
-                {part.files.map((path) => (
-                  <FileRow
-                    key={path}
-                    path={path}
-                    cwd={cwd}
-                    onOpen={open}
-                    indent
-                  />
-                ))}
-              </li>
-            ))}
-            {tokens ? (
-              <ToolsRow index={parts.length + 1} tokens={tokens} />
-            ) : null}
-          </ol>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="w-full"
-            onClick={() => setOpenSection({ title: "Full system prompt" })}
-          >
-            <ScrollTextIcon data-icon="inline-start" />
-            View full system prompt
-          </Button>
-          <p className="px-1.5 text-xs text-muted-foreground">
-            {prompt.sent
-              ? "The conversation messages come after the system prompt. When a part changes, the agent gets only that part again, as an update."
-              : "Not sent yet: the agent gets this with its first message, before the conversation. When a part changes later, the agent gets only that part again, as an update."}
-            {prompt.sent && prompt.updates > 0
-              ? ` ${prompt.updates} ${prompt.updates === 1 ? "update" : "updates"} so far.`
-              : ""}
-          </p>
+                  count={countOf(item)}
+                  label={`Show ${item.title}`}
+                  onClick={() => setOpenPart(item.key)}
+                />
+              ))}
+              <Row
+                name="Full system prompt"
+                label="Show the full system prompt"
+                onClick={() => setOpenPart(null)}
+              />
+            </ul>
+            <GroupFooter>{promptFooter(tokens)}</GroupFooter>
+          </section>
+          {tokens ? <ToolsGroup tokens={tokens} /> : null}
         </div>
       ) : instructions ? (
         // Until the prompt loads, or if it cannot load: the files.
@@ -458,26 +595,67 @@ function InstructionsSection({
           markdown
         />
       ) : null}
-      {openSection ? (
+      {prompt && openPart === null ? (
         <TextDialog
           open
           onOpenChange={(next) => {
-            if (!next) setOpenSection(null)
+            if (!next) setOpenPart(undefined)
           }}
-          title={openSection.title}
+          title="Full system prompt"
           path={SYSTEM_PROMPT_PATH}
-          searchParams={
-            openSection.id
-              ? {
-                  section: openSection.id,
-                  ...(openSection.scope ? { scope: openSection.scope } : {}),
-                }
-              : {}
-          }
+          searchParams={{}}
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}
           copy
+          details={
+            <DialogDescription>
+              {prompt.sent
+                ? "The conversation messages come after the system prompt. When a part changes, the agent gets only that part again, as an update."
+                : "Not sent yet: the agent gets this with its first message, before the conversation. When a part changes later, the agent gets only that part again, as an update."}
+              {prompt.sent && prompt.updates > 0
+                ? ` ${prompt.updates} ${prompt.updates === 1 ? "update" : "updates"} so far.`
+                : ""}
+            </DialogDescription>
+          }
+        />
+      ) : null}
+      {part ? (
+        <TextDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setOpenPart(undefined)
+          }}
+          title={part.title}
+          path={SYSTEM_PROMPT_PATH}
+          searchParams={{
+            section: part.section.id,
+            ...(part.key === "project_context:global"
+              ? { scope: "global" }
+              : part.key === "project_context:project"
+                ? { scope: "project" }
+                : {}),
+          }}
+          agentId={agentId}
+          viewerContextId={viewerContextId}
+          scrollToEnd={false}
+          copy
+          details={
+            <>
+              <DialogDescription>{part.description}</DialogDescription>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {partCount ? (
+                  <span className="tabular-nums">
+                    {formatTokens(partCount)} tokens
+                  </span>
+                ) : null}
+                {part.section.tagged ? (
+                  <code className="font-mono">{`<${part.section.id}>`}</code>
+                ) : null}
+                <FileLinks files={part.files} cwd={cwd} onOpen={open} />
+              </div>
+            </>
+          }
         />
       ) : null}
     </>
@@ -491,11 +669,6 @@ registerAgentSection({
   defaultOpen: false,
   // Every agent has a system prompt.
   visible: () => true,
-  summary(state) {
-    const count = instructionsOf(state)?.files.length ?? 0
-    return count > 0
-      ? `${count} ${count === 1 ? "file" : "files"}`
-      : "System prompt"
-  },
+  Summary: InstructionsSummary,
   Component: InstructionsSection,
 })

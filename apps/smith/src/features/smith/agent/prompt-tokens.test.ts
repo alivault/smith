@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vite-plus/test"
 
 import {
-  cacheNote,
+  cacheShare,
   contextShare,
   formatTokens,
   methodLabel,
+  promptFooter,
+  shareWidths,
   type PromptTokens,
 } from "./prompt-tokens"
 
@@ -37,18 +39,16 @@ describe("prompt token counts", () => {
     expect(contextShare(100, undefined)).toBeUndefined()
   })
 
-  it("words the cache note from the model's prices", () => {
-    expect(cacheNote(tokensOf({ cacheRead: 0.1 }))).toBe(
-      "Cached after the first request: later requests pay about 10% of the input price for it."
-    )
-    expect(cacheNote(tokensOf({ cacheRead: 0.25 }))).toContain("about 25%")
-    expect(cacheNote(tokensOf({ cacheRead: 0.02 }))).toContain("about 2%")
-    expect(cacheNote(tokensOf({ cacheRead: 0.005 }))).toContain("less than 1%")
-    expect(cacheNote(tokensOf())).toBeUndefined()
+  it("words the cache share from the model's prices", () => {
+    expect(cacheShare(tokensOf({ cacheRead: 0.1 }))).toBe("about 10%")
+    expect(cacheShare(tokensOf({ cacheRead: 0.25 }))).toBe("about 25%")
+    expect(cacheShare(tokensOf({ cacheRead: 0.02 }))).toBe("about 2%")
+    expect(cacheShare(tokensOf({ cacheRead: 0.005 }))).toBe("less than 1%")
+    expect(cacheShare(tokensOf())).toBeUndefined()
   })
 
   it("names the method", () => {
-    expect(methodLabel(tokensOf())).toMatch(/Exact/)
+    expect(methodLabel(tokensOf())).toBe("Exact counts from Anthropic")
     expect(
       methodLabel(
         tokensOf({
@@ -57,8 +57,49 @@ describe("prompt token counts", () => {
           note: "No Anthropic credentials",
         })
       )
-    ).toBe(
-      "Estimates (~): about 3.5 characters a token. No Anthropic credentials."
+    ).toBe("Estimates (~): no Anthropic credentials")
+  })
+
+  it("writes the footer of the prompt group", () => {
+    expect(promptFooter(undefined)).toBe("In the order the agent gets them.")
+    expect(promptFooter(tokensOf({ cacheRead: 0.1 }))).toBe(
+      "In the order the agent gets them. Exact counts from Anthropic; cached at about 10% of the input price after the first request."
     )
+    expect(
+      promptFooter(tokensOf({ pending: true, total: count(10, false) }))
+    ).toBe(
+      "In the order the agent gets them. Estimates (~) until Anthropic counts them."
+    )
+  })
+})
+
+describe("share bar widths", () => {
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
+
+  it("is proportional when every part is large enough", () => {
+    expect(shareWidths([1, 1, 2])).toEqual([25, 25, 50])
+  })
+
+  it("gives small parts the minimum width", () => {
+    const widths = shareWidths([1, 10_000, 9_999])
+    expect(widths[0]).toBe(2)
+    expect(sum(widths)).toBeCloseTo(100)
+    expect(widths[1]).toBeGreaterThan(widths[2])
+  })
+
+  it("gives empty parts no width", () => {
+    expect(shareWidths([0, 5, 5])).toEqual([0, 50, 50])
+    expect(shareWidths([0, 0])).toEqual([0, 0])
+    expect(shareWidths([])).toEqual([])
+  })
+
+  it("raises parts that scaling pushes under the minimum", () => {
+    const widths = shareWidths([1, 1, 2.1, 95.9], 3)
+    expect(widths.slice(0, 3)).toEqual([3, 3, 3])
+    expect(sum(widths)).toBeCloseTo(100)
+  })
+
+  it("shares the bar equally when the minimums fill it", () => {
+    expect(shareWidths([1, 1, 98], 40)).toEqual([100 / 3, 100 / 3, 100 / 3])
   })
 })

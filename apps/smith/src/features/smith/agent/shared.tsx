@@ -131,6 +131,7 @@ export function TextDialog({
   scrollToEnd = true,
   markdown = false,
   copy = false,
+  details,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -146,6 +147,8 @@ export function TextDialog({
   markdown?: boolean
   /** Show a button that copies the text. */
   copy?: boolean
+  /** Lines under the title, such as what the text is and where it comes from. */
+  details?: React.ReactNode
 }) {
   const machineId = useMachineId()
   const query = useQuery({
@@ -206,6 +209,7 @@ export function TextDialog({
               />
             ) : null}
           </DialogTitle>
+          {details}
         </DialogHeader>
         {markdown && query.data?.text ? (
           <div className="max-h-[60vh] min-h-24 overflow-auto rounded-md border p-4">
