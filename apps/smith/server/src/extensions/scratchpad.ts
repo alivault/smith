@@ -40,6 +40,49 @@ const SPILL_HEAD_CHARS = 2000
 /** Tools that read a spill file, or that spill on their own. */
 const NEVER_SPILL = new Set(["read", "codemode"])
 
+/** The argument that best tells one call of a tool from another. */
+const NAME_ARGS = [
+  "command",
+  "query",
+  "queries",
+  "url",
+  "urls",
+  "path",
+  "pattern",
+  "expression",
+  "selector",
+  "text",
+  "goal",
+  "message",
+] as const
+
+/**
+ * The name of a spilled output: the tool and what the call did, as
+ * `bash · pnpm check` or `browser · open https://…`, so entries of one tool
+ * differ in the list.
+ */
+export function spillName(tool: string, args: unknown, max = 60) {
+  const record =
+    args && typeof args === "object" ? (args as Record<string, unknown>) : {}
+  const text = (value: unknown): string | undefined => {
+    if (typeof value === "string") return value
+    if (Array.isArray(value)) return text(value[0])
+    return undefined
+  }
+  const action = typeof record.action === "string" ? record.action : undefined
+  const detail = NAME_ARGS.map((key) => text(record[key])).find(
+    (value) => value !== undefined && value.trim() !== ""
+  )
+  const what = [action, detail]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!what) return `${tool} output`
+  const short = what.length > max ? `${what.slice(0, max - 1)}…` : what
+  return `${tool} · ${short}`
+}
+
 export class Scratchpad {
   readonly #root: string
 
@@ -163,7 +206,7 @@ export function createScratchpadExtension(host: HostBridge, dataDir: string) {
         return undefined
       const entry = await scratch.put(api.conversationId, text, {
         source: call.name,
-        name: `${call.name} output`,
+        name: spillName(call.name, call.arguments),
       })
       return {
         ...result,

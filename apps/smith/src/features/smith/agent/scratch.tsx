@@ -1,9 +1,8 @@
 import * as React from "react"
 import { NotebookTextIcon } from "lucide-react"
 
-import { TitleTooltip } from "@/components/ui/tooltip"
 import { registerAgentSection } from "@/features/smith/agent/agent-panel"
-import { TextDialog } from "@/features/smith/agent/shared"
+import { relativeTime, TextDialog, useNow } from "@/features/smith/agent/shared"
 import {
   registerToolRenderer,
   toolArgs,
@@ -36,30 +35,28 @@ function ScratchSection({
 }) {
   const entries = (state.scratch as Array<ScratchEntry> | undefined) ?? []
   const [open, setOpen] = React.useState<ScratchEntry | null>(null)
+  const now = useNow(30_000)
   return (
     <>
       <ul className="space-y-0.5">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <TitleTooltip
-              title={`${entry.lines} lines${entry.source ? ` from ${entry.source}` : ""}`}
+            <button
+              type="button"
+              aria-label={`Show ${entry.name}`}
+              className="flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+              onClick={() => setOpen(entry)}
             >
-              <button
-                type="button"
-                aria-label={`Show ${entry.name}`}
-                className="flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-                onClick={() => setOpen(entry)}
-              >
-                <NotebookTextIcon
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
-                />
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {formatBytes(entry.bytes)}
-                </span>
-              </button>
-            </TitleTooltip>
+              <NotebookTextIcon
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {formatBytes(entry.bytes)} ·{" "}
+                {relativeTime(entry.createdAt, now).replace(/ ago$/, "")}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
@@ -69,7 +66,7 @@ function ScratchSection({
           onOpenChange={(next) => {
             if (!next) setOpen(null)
           }}
-          title={open.name}
+          title={`${open.name} · ${open.lines} ${open.lines === 1 ? "line" : "lines"}`}
           path="/api/agent/scratch"
           searchParams={{ id: open.id }}
           agentId={agentId}

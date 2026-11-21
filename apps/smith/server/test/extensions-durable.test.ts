@@ -23,7 +23,10 @@ import {
   JobsDoc,
   plainText,
 } from "../src/extensions/jobs.ts"
-import { createScratchpadExtension } from "../src/extensions/scratchpad.ts"
+import {
+  createScratchpadExtension,
+  spillName,
+} from "../src/extensions/scratchpad.ts"
 import { parseAgentNotice } from "../../src/lib/smith/agent-notice.ts"
 import { Terminals } from "../src/services/terminal.ts"
 import {
@@ -746,6 +749,30 @@ void test("the scratchpad stores entries and spills large output", async () => {
   } finally {
     await harness.close(ctx)
   }
+})
+
+void test("a spilled output is named after its call", () => {
+  assert.equal(
+    spillName("bash", { command: "pnpm   check\n  --fix" }),
+    "bash · pnpm check --fix"
+  )
+  assert.equal(
+    spillName("browser", { action: "open", url: "https://example.com" }),
+    "browser · open https://example.com"
+  )
+  assert.equal(
+    spillName("browser", { action: "snapshot" }),
+    "browser · snapshot"
+  )
+  assert.equal(
+    spillName("web_search", { queries: ["a b", "c"] }),
+    "web_search · a b"
+  )
+  assert.equal(spillName("noisy", {}), "noisy output")
+  assert.equal(
+    spillName("bash", { command: "x".repeat(80) }, 10),
+    "bash · xxxxxxxxx…"
+  )
 })
 
 void test("running jobs of an earlier process become lost at startup", async () => {
