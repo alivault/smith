@@ -162,6 +162,29 @@ export function replayedSections(messages: readonly Message[]) {
   }
 }
 
+/**
+ * The `<project_instructions>` blocks of the global or the project files of
+ * the project context section, joined as in the section.
+ */
+export function scopeText(
+  section: SystemPromptSection,
+  scope: SystemPromptFile["scope"]
+) {
+  const paths = new Set(
+    (section.files ?? [])
+      .filter((file) => file.scope === scope)
+      .map((file) => file.path)
+  )
+  return [
+    ...section.text.matchAll(
+      /<project_instructions path="([^"]*)">[\s\S]*?<\/project_instructions>/g
+    ),
+  ]
+    .filter((match) => paths.has(match[1] ?? ""))
+    .map((match) => match[0])
+    .join("\n\n")
+}
+
 /** Describe the sections: titles, extensions, and their source files. */
 export function describeSections(
   sections: ReadonlyArray<readonly [string, string]>,

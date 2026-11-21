@@ -30,7 +30,7 @@ import {
 import { stream as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages"
 import { estimateTextTokens } from "@earendil-works/pi-ai/utils/estimate"
 
-import type { SystemPromptSection } from "./system-prompt.ts"
+import { scopeText, type SystemPromptSection } from "./system-prompt.ts"
 
 export type TokenCount = { tokens: number; exact: boolean }
 
@@ -115,40 +115,17 @@ function withoutCacheControl(blocks: readonly unknown[]) {
   })
 }
 
-/**
- * The texts of the project context section for the global and the project
- * AGENTS.md files, as the list shows them.
- */
-export function projectContextChunks(section: SystemPromptSection) {
-  const global = (section.files ?? []).filter((file) => file.scope === "global")
-  if (global.length === 0) return undefined
-  let rest = section.text
-  const blocks: string[] = []
-  for (const { path } of global) {
-    const start = rest.indexOf(`<project_instructions path="${path}">`)
-    if (start < 0) continue
-    const close = "</project_instructions>"
-    const end = rest.indexOf(close, start)
-    if (end < 0) continue
-    let stop = end + close.length
-    if (rest.startsWith("\n\n", stop)) stop += 2
-    blocks.push(rest.slice(start, end + close.length))
-    rest = rest.slice(0, start) + rest.slice(stop)
-  }
-  if (blocks.length === 0) return undefined
-  return { global: blocks.join("\n\n"), project: rest }
-}
-
 /** The texts to count: each section, and the project context split. */
 function partTexts(sections: readonly SystemPromptSection[]) {
   const texts: Array<[string, string]> = []
   for (const section of sections) {
     texts.push([section.id, section.text])
-    if (section.id !== "project_context") continue
-    const chunks = projectContextChunks(section)
-    if (!chunks) continue
-    texts.push(["project_context:global", chunks.global])
-    texts.push(["project_context:project", chunks.project])
+    // The global and the project rows: the blocks of their own files.
+    if (section.id !== "project_context" || !section.files?.length) continue
+    for (const scope of ["global", "project"] as const) {
+      const text = scopeText(section, scope)
+      if (text) texts.push([`project_context:${scope}`, text])
+    }
   }
   return texts
 }

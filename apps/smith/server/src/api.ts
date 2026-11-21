@@ -19,6 +19,7 @@ import {
 } from "./config.ts"
 import type { Auth, UiRequests } from "./core/auth.ts"
 import { PromptTokenCounter } from "./core/prompt-tokens.ts"
+import { scopeText } from "./core/system-prompt.ts"
 import type { Runtime } from "./core/runtime.ts"
 import {
   conversationIdOf,
@@ -2187,19 +2188,7 @@ export function createApi(api: ApiContext) {
       // <project_instructions> blocks, so the two rows show different text.
       const scope = stringField(request.query.get("scope"))
       if (scope === "global" || scope === "project") {
-        const paths = new Set(
-          (section.files ?? [])
-            .filter((file) => file.scope === scope)
-            .map((file) => file.path)
-        )
-        const blocks = [
-          ...section.text.matchAll(
-            /<project_instructions path="([^"]*)">[\s\S]*?<\/project_instructions>/g
-          ),
-        ]
-          .filter((match) => paths.has(match[1] ?? ""))
-          .map((match) => match[0])
-        return { ok: true, id: key, scope, text: blocks.join("\n\n") }
+        return { ok: true, id: key, scope, text: scopeText(section, scope) }
       }
       return { ok: true, id: key, text: section.text }
     }

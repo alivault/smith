@@ -8,7 +8,6 @@ import type { Api, Model, Tool } from "@earendil-works/pi-ai"
 import {
   estimateTokens,
   PromptTokenCounter,
-  projectContextChunks,
   type TokenInput,
 } from "../src/core/prompt-tokens.ts"
 import type { SystemPromptSection } from "../src/core/system-prompt.ts"
@@ -265,32 +264,44 @@ void test("other models, no credentials, and errors fall back to estimates", asy
   assert.equal(rate.note, "Rate limited by Anthropic")
 })
 
-void test("the project context splits into the global and project files", () => {
+void test("the global and project rows count the blocks of their own files", async () => {
+  const global =
+    '<project_instructions path="/home/a/.pi/agent/AGENTS.md">\nGlobal.\n</project_instructions>'
+  const project =
+    '<project_instructions path="/p/AGENTS.md">\nProject.\n</project_instructions>'
   const text = [
     "<project_context>",
     "Project-specific instructions and guidelines:",
     "",
-    '<project_instructions path="/home/a/.pi/agent/AGENTS.md">\nGlobal.\n</project_instructions>',
+    global,
     "",
-    '<project_instructions path="/p/AGENTS.md">\nProject.\n</project_instructions>',
+    project,
     "</project_context>",
   ].join("\n")
-  const chunks = projectContextChunks({
-    id: "project_context",
-    title: "Project context",
-    text,
-    tagged: true,
-    files: [
-      { path: "/home/a/.pi/agent/AGENTS.md", scope: "global" },
-      { path: "/p/AGENTS.md", scope: "project" },
-    ],
-  })
-  assert.equal(
-    chunks?.global,
-    '<project_instructions path="/home/a/.pi/agent/AGENTS.md">\nGlobal.\n</project_instructions>'
+  const tokens = estimateTokens(
+    inputOf([
+      {
+        id: "project_context",
+        title: "Project context",
+        text,
+        tagged: true,
+        files: [
+          { path: "/home/a/.pi/agent/AGENTS.md", scope: "global" },
+          { path: "/p/AGENTS.md", scope: "project" },
+        ],
+      },
+    ])
   )
   assert.equal(
-    chunks?.project,
-    '<project_context>\nProject-specific instructions and guidelines:\n\n<project_instructions path="/p/AGENTS.md">\nProject.\n</project_instructions>\n</project_context>'
+    tokens.parts["project_context:global"]?.tokens,
+    Math.ceil(global.length / 3.5)
+  )
+  assert.equal(
+    tokens.parts["project_context:project"]?.tokens,
+    Math.ceil(project.length / 3.5)
+  )
+  assert.equal(
+    tokens.parts.project_context?.tokens,
+    Math.ceil(text.length / 3.5)
   )
 })
