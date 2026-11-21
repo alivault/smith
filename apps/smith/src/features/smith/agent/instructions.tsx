@@ -1,6 +1,11 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileTextIcon, ScrollTextIcon } from "lucide-react"
+import {
+  ChevronRightIcon,
+  FileTextIcon,
+  ScrollTextIcon,
+  WrenchIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { TitleTooltip } from "@/components/ui/tooltip"
@@ -12,6 +17,14 @@ import { TextDialog } from "@/features/smith/agent/shared"
 import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 import { useSmithEvent } from "@/features/smith/agent/events"
+import {
+  cacheNote,
+  contextShare,
+  formatTokens,
+  methodLabel,
+  type PromptTokens,
+  type TokenCount,
+} from "@/features/smith/agent/prompt-tokens"
 
 /** The context files (AGENTS.md) that the agent loads. */
 type Instructions = { cwd: string; files: Array<{ path: string }> }
@@ -33,6 +46,7 @@ type SystemPrompt = {
   updates: number
   sections: PromptSection[]
   text: string
+  tokens?: PromptTokens
 }
 
 /** One line of the ordered list: a section, or a part of one. */
@@ -45,6 +59,7 @@ type Part = {
 }
 
 const SYSTEM_PROMPT_PATH = "/api/agent/system-prompt"
+const TOKENS_PATH = "/api/agent/system-prompt/tokens"
 
 function instructionsOf(state: Record<string, unknown>) {
   const value = state.instructions as Instructions | undefined
@@ -144,6 +159,97 @@ function partsOf(sections: PromptSection[]): Part[] {
   return parts
 }
 
+/** A token count at the right of a row. */
+function Tokens({ count }: { count: TokenCount | undefined }) {
+  if (!count) return null
+  return (
+    <span className="shrink-0 text-xs leading-5 text-muted-foreground tabular-nums">
+      {formatTokens(count)}
+    </span>
+  )
+}
+
+/** The total, its share of the context window, and the cache note. */
+function TokenSummary({ tokens }: { tokens: PromptTokens }) {
+  const share = contextShare(tokens.total.tokens, tokens.model?.contextWindow)
+  const note = cacheNote(tokens)
+  return (
+    <div className="space-y-0.5 px-1.5">
+      <p className="text-xs text-foreground/90 tabular-nums">
+        System prompt and tools · {formatTokens(tokens.total)} tokens
+        {share ? ` · ${share} of context` : ""}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {methodLabel(tokens)}
+        {note ? ` ${note}` : ""}
+      </p>
+    </div>
+  )
+}
+
+/** The tool definitions that each request sends; opens to list them. */
+function ToolsRow({ index, tokens }: { index: number; tokens: PromptTokens }) {
+  const [open, setOpen] = React.useState(false)
+  const { items, overhead, total } = tokens.tools
+  if (items.length === 0) return null
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`Tools: ${items.length}`}
+        className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="w-4 shrink-0 text-right text-xs leading-5 text-muted-foreground tabular-nums">
+          {index}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="truncate text-sm">Tools ({items.length})</span>
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={`size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            />
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            Name, description, and input schema of each tool
+          </span>
+        </span>
+        <Tokens count={total} />
+      </button>
+      {open ? (
+        <ul className="pb-1">
+          {items.map((tool) => (
+            <li
+              key={tool.name}
+              className="flex h-6 min-w-0 items-center gap-2 pr-1.5 pl-7 text-sm"
+            >
+              <WrenchIcon
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-muted-foreground"
+              />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                {tool.name}
+              </span>
+              <Tokens count={tool} />
+            </li>
+          ))}
+          {overhead && overhead.tokens > 0 ? (
+            <li className="flex h-6 min-w-0 items-center gap-2 pr-1.5 pl-7 text-sm">
+              <span className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                Tool use overhead
+              </span>
+              <Tokens count={overhead} />
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </li>
+  )
+}
+
 function FileRow({
   path,
   cwd,
@@ -192,6 +298,28 @@ function InstructionsSection({
         })
       ),
   })
+  // Exact counts that the server did not have yet: one more request, which
+  // waits for them.
+  const pending = query.data?.tokens?.pending === true
+  const exactQuery = useQuery({
+    queryKey: [
+      "smith",
+      "system-prompt-tokens",
+      viewerContextId,
+      agentId,
+      query.dataUpdatedAt,
+    ],
+    enabled: pending,
+    retry: false,
+    queryFn: () =>
+      fetchJson<{ tokens: PromptTokens }>(
+        buildRequestUrl(TOKENS_PATH, {
+          machineId,
+          contextId: viewerContextId,
+          agentId,
+        })
+      ),
+  })
   // The server tells when the agent gets a new or changed system prompt.
   useSmithEvent("smith:agent-extensions", (detail) => {
     if (detail.agentId === agentId && detail.kind === "system_prompt")
@@ -213,10 +341,13 @@ function InstructionsSection({
     else setOpenFile(path)
   }
   const parts = prompt ? partsOf(prompt.sections) : []
+  const tokens =
+    (pending ? exactQuery.data?.tokens : undefined) ?? prompt?.tokens
   return (
     <>
       {prompt ? (
         <div className="space-y-2">
+          {tokens ? <TokenSummary tokens={tokens} /> : null}
           <div className="px-1.5 text-xs font-medium text-muted-foreground">
             What the agent gets, in order
           </div>
@@ -257,6 +388,11 @@ function InstructionsSection({
                       {part.description}
                     </span>
                   </span>
+                  <Tokens
+                    count={
+                      tokens?.parts[part.key] ?? tokens?.parts[part.section.id]
+                    }
+                  />
                 </button>
                 {part.files.map((path) => (
                   <FileRow
@@ -269,6 +405,9 @@ function InstructionsSection({
                 ))}
               </li>
             ))}
+            {tokens ? (
+              <ToolsRow index={parts.length + 1} tokens={tokens} />
+            ) : null}
           </ol>
           <Button
             type="button"

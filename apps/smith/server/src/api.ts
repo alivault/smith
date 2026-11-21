@@ -6,6 +6,7 @@
 import { createReadStream } from "node:fs"
 import { realpath } from "node:fs/promises"
 import { homedir } from "node:os"
+import { join } from "node:path"
 
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 
@@ -17,6 +18,7 @@ import {
   VERSION,
 } from "./config.ts"
 import type { Auth, UiRequests } from "./core/auth.ts"
+import { PromptTokenCounter } from "./core/prompt-tokens.ts"
 import type { Runtime } from "./core/runtime.ts"
 import {
   conversationIdOf,
@@ -130,6 +132,10 @@ function draftCwdFromKey(key: string | undefined) {
 export function createApi(api: ApiContext) {
   const { agents, viewers, hub, runtime } = api
   const router = new Router()
+  const promptTokens = new PromptTokenCounter({
+    file: join(api.dataDir, "prompt-tokens.json"),
+    models: runtime.models,
+  })
   const promptAdmissions = new Map<string, Promise<unknown>>()
   async function admitPrompt(contextId: string, work: () => Promise<unknown>) {
     const previous = promptAdmissions.get(contextId) ?? Promise.resolve()
@@ -2172,7 +2178,7 @@ export function createApi(api: ApiContext) {
    */
   router.get("/api/agent/system-prompt", async (request) => {
     const id = requireAgent(request)
-    const prompt = await agents.systemPrompt(id)
+    const { model, tools, ...prompt } = await agents.systemPrompt(id)
     const key = stringField(request.query.get("section"))
     if (key) {
       const section = prompt.sections.find((candidate) => candidate.id === key)
@@ -2197,7 +2203,21 @@ export function createApi(api: ApiContext) {
       }
       return { ok: true, id: key, text: section.text }
     }
-    return { ok: true, ...prompt }
+    // Cached exact counts, else estimates; the missing exact counts are
+    // made in the background (`tokens.pending`).
+    const tokens = await promptTokens.count({ ...prompt, model, tools })
+    return { ok: true, ...prompt, tokens }
+  })
+
+  /** The token counts of the system prompt and tools, after exact counts. */
+  router.get("/api/agent/system-prompt/tokens", async (request) => {
+    const id = requireAgent(request)
+    const { model, tools, ...prompt } = await agents.systemPrompt(id)
+    const tokens = await promptTokens.count(
+      { ...prompt, model, tools },
+      { wait: true }
+    )
+    return { ok: true, tokens }
   })
 
   // ---------------------------------------------------------------------------

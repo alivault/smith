@@ -14,8 +14,11 @@
 import type { Context } from "@earendil-works/chord/context"
 import {
   getCurrentSystemMessage,
+  getCurrentTools,
   getSystemMessageText,
+  toToolDeclaration,
   type Message,
+  type Tool,
 } from "@earendil-works/pi-ai"
 import type {
   Agent,
@@ -61,6 +64,8 @@ export type SystemPrompt = {
   sections: SystemPromptSection[]
   /** The full system prompt text, exactly as the model request renders it. */
   text: string
+  /** The tool definitions that the model request offers with the prompt. */
+  tools: Tool[]
 }
 
 const TITLES: Record<string, string> = {
@@ -220,6 +225,7 @@ export async function systemPromptOf(options: {
         agentDir,
       }),
       text: replayed.text,
+      tools: getCurrentTools(options.messages),
     }
   }
   const rendered = await renderSections(
@@ -243,5 +249,6 @@ export async function systemPromptOf(options: {
       sections: Object.fromEntries(rendered),
       timestamp: 0,
     }),
+    tools: agent.tools.map(toToolDeclaration),
   }
 }

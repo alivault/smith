@@ -253,6 +253,41 @@ void test("GET /api/agent/system-prompt returns the sections and one section", a
       prompt.text,
       prompt.sections.map((section) => section.text).join("\n\n")
     )
+    // Token counts: estimates without Anthropic credentials, and the tool
+    // definitions with them; the schemas themselves stay on the server.
+    const tokens = (
+      prompt as unknown as {
+        tokens: {
+          method: string
+          pending: boolean
+          parts: Record<string, { tokens: number; exact: boolean }>
+          prompt: { tokens: number }
+          tools: {
+            total: { tokens: number }
+            items: Array<{ name: string; tokens: number }>
+          }
+          total: { tokens: number; exact: boolean }
+        }
+      }
+    ).tokens
+    assert.equal(tokens.method, "estimate")
+    assert.equal(tokens.pending, false)
+    assert.ok((tokens.parts.preamble?.tokens ?? 0) > 0)
+    assert.equal(tokens.parts.preamble?.exact, false)
+    assert.ok(tokens.parts["project_context:global"])
+    assert.ok(tokens.parts["project_context:project"])
+    assert.ok(tokens.tools.items.some((tool) => tool.name === "read"))
+    assert.equal(
+      tokens.total.tokens,
+      tokens.prompt.tokens + tokens.tools.total.tokens
+    )
+    assert.equal("tools" in prompt, false)
+    const waited = (await (
+      await fetch(
+        `http://127.0.0.1:${port}/api/agent/system-prompt/tokens?agent=${id}`
+      )
+    ).json()) as { tokens: typeof tokens }
+    assert.deepEqual(waited.tokens, tokens)
     const one = (await (await fetch(`${url}&section=cwd`)).json()) as {
       text: string
     }

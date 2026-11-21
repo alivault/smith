@@ -1047,7 +1047,7 @@ export class Agents implements HostAgents {
         console.warn("[smith] could not read the prompt resources:", error)
         return undefined
       })
-    return systemPromptOf({
+    const prompt = await systemPromptOf({
       cwd,
       messages: view.messages,
       agent,
@@ -1058,6 +1058,11 @@ export class Agents implements HostAgents {
       agentDir: this.#runtime.agentDir,
       context: ctx,
     })
+    const agentState = await this.#doc(id, "agent")
+    const model = this.#model(
+      agentState?.model ?? agent.model ?? this.defaultModel()
+    )
+    return { ...prompt, model }
   }
 
   /** The content of one context file that the agent of an agent loads. */
