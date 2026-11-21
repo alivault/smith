@@ -221,43 +221,39 @@ function InstructionsSection({
           <ol className="space-y-0.5">
             {parts.map((part, index) => (
               <li key={part.key}>
-                <TitleTooltip
-                  title={`${part.description}. Show the text that the agent gets.`}
+                <button
+                  type="button"
+                  aria-label={`Show ${part.title}`}
+                  className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+                  onClick={() =>
+                    setOpenSection({
+                      id: part.section.id,
+                      title:
+                        part.section.id === "project_context"
+                          ? "Project context: global and project instructions"
+                          : part.title,
+                    })
+                  }
                 >
-                  <button
-                    type="button"
-                    aria-label={`Show ${part.title}`}
-                    className="flex w-full min-w-0 items-start gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
-                    onClick={() =>
-                      setOpenSection({
-                        id: part.section.id,
-                        title:
-                          part.section.id === "project_context"
-                            ? "Project context: global and project instructions"
-                            : part.title,
-                      })
-                    }
-                  >
-                    <span className="w-4 shrink-0 text-right text-xs leading-5 text-muted-foreground tabular-nums">
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        <span className="max-w-full shrink-0 truncate text-sm">
-                          {part.title}
+                  <span className="w-4 shrink-0 text-right text-xs leading-5 text-muted-foreground tabular-nums">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="max-w-full shrink-0 truncate text-sm">
+                        {part.title}
+                      </span>
+                      {part.section.tagged ? (
+                        <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+                          {`<${part.section.id}>`}
                         </span>
-                        {part.section.tagged ? (
-                          <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-muted-foreground">
-                            {`<${part.section.id}>`}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {part.description}
-                      </span>
+                      ) : null}
                     </span>
-                  </button>
-                </TitleTooltip>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {part.description}
+                    </span>
+                  </span>
+                </button>
                 {part.files.map((path) => (
                   <FileRow
                     key={path}
