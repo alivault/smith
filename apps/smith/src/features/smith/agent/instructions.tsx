@@ -20,10 +20,10 @@ import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 import { useSmithEvent } from "@/features/smith/agent/events"
 import {
-  contextShare,
   formatTokens,
   partColor,
-  promptFooter,
+  estimateNote,
+  summaryLines,
   shareWidths,
   TOOLS_COLOR,
   type PromptTokens,
@@ -297,13 +297,17 @@ function InstructionsSummary(props: AgentSectionProps) {
       : "System prompt"
   }
   const text = `${formatTokens(tokens.total)} tokens`
-  const window = tokens.model?.contextWindow
-  const share = contextShare(tokens.total.tokens, window)
-  if (!share || !window) return text
-  const size = formatTokens({ tokens: window, exact: true })
+  const lines = summaryLines(tokens)
+  if (lines.length === 0) return text
   return (
     <TitleTooltip
-      title={`System prompt ${formatTokens(tokens.prompt)} and tools ${formatTokens(tokens.tools.total)}: ${share} of the ${size} context window`}
+      title={
+        <span className="flex max-w-64 flex-col gap-1">
+          {lines.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </span>
+      }
     >
       <span>{text}</span>
     </TitleTooltip>
@@ -514,7 +518,6 @@ function ToolsGroup({ tokens }: { tokens: PromptTokens }) {
           />
         ) : null}
       </ul>
-      <GroupFooter>Sent with every request.</GroupFooter>
       {open ? <ToolsDialog tokens={tokens} onOpenChange={setOpen} /> : null}
     </section>
   )
@@ -663,7 +666,9 @@ function InstructionsSection(props: AgentSectionProps) {
                 onClick={() => setOpenPart(null)}
               />
             </ul>
-            <GroupFooter>{promptFooter(tokens)}</GroupFooter>
+            {estimateNote(tokens) ? (
+              <GroupFooter>{estimateNote(tokens)}</GroupFooter>
+            ) : null}
           </section>
           {tokens ? <ToolsGroup tokens={tokens} /> : null}
         </div>

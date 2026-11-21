@@ -63,12 +63,25 @@ export function cacheShare(tokens: PromptTokens) {
     : `about ${percent < 10 ? Math.round(percent * 10) / 10 : Math.round(percent)}%`
 }
 
-/** The footer of the system prompt group: order, method, and cache. */
-export function promptFooter(tokens: PromptTokens | undefined) {
-  const order = "In the order the agent gets them."
-  if (!tokens) return order
-  const share = cacheShare(tokens)
-  return `${order} ${methodLabel(tokens)}${share ? `; cached at ${share} of the input price after the first request` : ""}.`
+/** The note under the system prompt group: only when the counts are estimates. */
+export function estimateNote(tokens: PromptTokens | undefined) {
+  if (!tokens || tokens.total.exact) return undefined
+  return `${methodLabel(tokens)}.`
+}
+
+/** The tooltip of the section header: context share, then the cache price. */
+export function summaryLines(tokens: PromptTokens) {
+  const lines: string[] = []
+  const window = tokens.model?.contextWindow
+  const share = contextShare(tokens.total.tokens, window)
+  if (share && window)
+    lines.push(
+      `System prompt ${formatTokens(tokens.prompt)} and tools ${formatTokens(tokens.tools.total)}: ${share} of the ${formatTokens({ tokens: window, exact: true })} context window.`
+    )
+  const cache = cacheShare(tokens)
+  if (cache)
+    lines.push(`Cached after the first request: ${cache} of the input price.`)
+  return lines
 }
 
 /**

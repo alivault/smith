@@ -5,7 +5,8 @@ import {
   contextShare,
   formatTokens,
   methodLabel,
-  promptFooter,
+  estimateNote,
+  summaryLines,
   shareWidths,
   type PromptTokens,
 } from "./prompt-tokens"
@@ -60,15 +61,17 @@ describe("prompt token counts", () => {
     ).toBe("Estimates (~): no Anthropic credentials")
   })
 
-  it("writes the footer of the prompt group", () => {
-    expect(promptFooter(undefined)).toBe("In the order the agent gets them.")
-    expect(promptFooter(tokensOf({ cacheRead: 0.1 }))).toBe(
-      "In the order the agent gets them. Exact counts from Anthropic; cached at about 10% of the input price after the first request."
-    )
+  it("notes estimates only", () => {
+    expect(estimateNote(undefined)).toBeUndefined()
+    expect(estimateNote(tokensOf({ cacheRead: 0.1 }))).toBeUndefined()
     expect(
-      promptFooter(tokensOf({ pending: true, total: count(10, false) }))
-    ).toBe(
-      "In the order the agent gets them. Estimates (~) until Anthropic counts them."
+      estimateNote(tokensOf({ pending: true, total: count(10, false) }))
+    ).toBe("Estimates (~) until Anthropic counts them.")
+  })
+
+  it("writes the header tooltip", () => {
+    expect(summaryLines(tokensOf({ cacheRead: 0.05 }))).toContain(
+      "Cached after the first request: about 5% of the input price."
     )
   })
 })
