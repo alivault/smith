@@ -138,6 +138,10 @@ const config = {
       "/m/": backendProxy,
     },
   },
+  // The unit tests of the web client. The server has its own tests.
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
   plugins,
 }
 

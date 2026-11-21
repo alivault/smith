@@ -95,16 +95,22 @@ import {
   usePortalContainer,
 } from "@/components/ui/portal-container"
 import {
-  COLLAPSED_PROJECTS_STORAGE_KEY,
   PROJECT_AGENT_LOAD_MORE_COUNT,
   INITIAL_PROJECT_AGENT_RENDER_COUNT,
   PINNED_AGENTS_STORAGE_KEY,
   SIDEBAR_PROJECTS_STORAGE_KEY,
-  readStoredCollapsedProjects,
   readStoredPinnedAgentKeys,
+  readStoredSidebarProjects,
   machineLocalStorageSetItem,
   agentListEntryKey,
 } from "@/lib/smith"
+import {
+  collapsedProjectStoreFor,
+  nextRenderCount,
+  useGroupRenderCount,
+  useGroupStatusFilter,
+  type CollapsedProjectStore,
+} from "@/features/smith/sidebar-view-state"
 import { openJobTerminal, useSmithEvent } from "@/features/smith/agent/events"
 import {
   SidebarAgentJobDots,
@@ -131,7 +137,10 @@ import {
   workingSubagents,
 } from "@/features/smith/archive-agents"
 import { toast } from "@/lib/smith/toast"
-import { startSidebarSync } from "@/features/smith/sidebar-sync"
+import {
+  refreshSidebarState,
+  startSidebarSync,
+} from "@/features/smith/sidebar-sync"
 import { ServerUpdateStatus } from "@/features/smith/server-restart"
 import { ProjectIcon } from "@/features/smith/project-icon"
 import { useSidebarAgentNumber } from "@/features/smith/sidebar-agent-numbers"
@@ -170,7 +179,6 @@ import {
   agentStatusGroup,
   filterProjectAgentsByStatus,
   agentMatchesStatusFilter,
-  toggleStatusFilter,
   type AgentStatusFilter,
   type AgentStatusFilters,
   type AgentStatusGroup,
@@ -413,102 +421,6 @@ function projectOrderEqual(left: Array<string>, right: Array<string>) {
     left.length === right.length &&
     left.every((project, index) => project === right[index])
   )
-}
-
-type CollapsedProjectState = Record<string, boolean>
-
-type CollapsedProjectStore = SmithStore<CollapsedProjectState> & {
-  loadStored: () => void
-  toggle: (project: string) => void
-  setCollapsed: (project: string, collapsed: boolean) => void
-  setAll: (projects: Array<string>, collapsed: boolean) => void
-  remove: (project: string) => void
-}
-
-function sameCollapsedProjectState(
-  left: CollapsedProjectState,
-  right: CollapsedProjectState
-) {
-  const leftKeys = Object.keys(left).sort()
-  const rightKeys = Object.keys(right).sort()
-  if (!projectOrderEqual(leftKeys, rightKeys)) return false
-
-  return leftKeys.every((key) => Boolean(left[key]) === Boolean(right[key]))
-}
-
-function createCollapsedProjectStore(
-  machineId: string,
-  storageKey = COLLAPSED_PROJECTS_STORAGE_KEY
-): CollapsedProjectStore {
-  const store = createSmithStore<CollapsedProjectState>(
-    {},
-    sameCollapsedProjectState
-  ) as CollapsedProjectStore
-
-  const persist = () => {
-    machineLocalStorageSetItem(
-      machineId,
-      storageKey,
-      JSON.stringify(store.state)
-    )
-  }
-
-  Object.assign(store, {
-    loadStored() {
-      setStoreState(store, readStoredCollapsedProjects(machineId, storageKey))
-    },
-    toggle(project) {
-      store.setCollapsed(project, !store.state[project])
-    },
-    setCollapsed(project, collapsed) {
-      setStoreState(store, (current) => {
-        if (Boolean(current[project]) === collapsed) return current
-        const next = { ...current }
-        if (collapsed) {
-          next[project] = true
-        } else {
-          delete next[project]
-        }
-        return next
-      })
-      persist()
-    },
-    setAll(projects, collapsed) {
-      setStoreState(store, (current) => {
-        let changed = false
-        const next = { ...current }
-
-        for (const project of projects) {
-          if (collapsed) {
-            if (next[project]) continue
-            next[project] = true
-            changed = true
-          } else {
-            if (!next[project]) continue
-            delete next[project]
-            changed = true
-          }
-        }
-
-        return changed ? next : current
-      })
-      persist()
-    },
-    remove(project) {
-      setStoreState(store, (current) => {
-        if (!current[project]) return current
-        const next = { ...current }
-        delete next[project]
-        return next
-      })
-      persist()
-    },
-  } satisfies Omit<
-    CollapsedProjectStore,
-    keyof SmithStore<CollapsedProjectState>
-  >)
-
-  return store
 }
 
 function useProjectCollapsed(
@@ -1715,15 +1627,20 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
   archivedJobAgents = 0,
   onOpenArchivedJobs,
 }: ProjectAgentGroupProps) {
-  const [renderCount, setRenderCount] = React.useState(
-    INITIAL_PROJECT_AGENT_RENDER_COUNT
+  // Shared with the other drawing of the machine (see `sidebar-view-state.ts`).
+  const machineId = useMachineId()
+  const [renderCount, setRenderCount] = useGroupRenderCount(
+    machineId,
+    `project:${project}`
   )
   const { isLoadingAgents, agentKeys: allAgentKeys } = useProjectAgents(
     projectAgentsStore,
     project
   )
-  const [statusFilter, setStatusFilter] =
-    React.useState<AgentStatusFilters | null>(null)
+  const [statusFilter, toggleProjectStatusFilter] = useGroupStatusFilter(
+    machineId,
+    `project:${project}`
+  )
   const agentKeys = useSelector(
     projectAgentsStore,
     (state) => {
@@ -1831,7 +1748,7 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
         disabled={overlay}
         onToggle={(filter) => {
           collapsedProjectStore.setCollapsed(project, false)
-          setStatusFilter((current) => toggleStatusFilter(current, filter))
+          toggleProjectStatusFilter(filter)
         }}
       />
 
@@ -2028,18 +1945,15 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
                       <Button
                         variant="ghost"
                         className="h-8 justify-start pl-(--agent-text-left) text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                        onClick={() => {
-                          if (showLess) {
-                            setRenderCount(INITIAL_PROJECT_AGENT_RENDER_COUNT)
-                            return
-                          }
-                          setRenderCount((current) =>
-                            Math.min(
+                        onClick={() =>
+                          setRenderCount(
+                            nextRenderCount(
+                              renderCount,
                               unpinnedAgentKeys.length,
-                              current + PROJECT_AGENT_LOAD_MORE_COUNT
+                              showLess
                             )
                           )
-                        }}
+                        }
                       >
                         {showLess
                           ? "Show less"
@@ -2125,8 +2039,10 @@ function PinnedAgentGroup({
     PINNED_AGENT_GROUP_COLLAPSE_KEY,
     searchActive
   )
-  const [statusFilter, setStatusFilter] =
-    React.useState<AgentStatusFilters | null>(null)
+  const [statusFilter, togglePinnedStatusFilter] = useGroupStatusFilter(
+    useMachineId(),
+    "pinned"
+  )
   // Each pinned agent with its subagent tree.
   const allRows = useSelector(
     projectAgentsStore,
@@ -2202,7 +2118,7 @@ function PinnedAgentGroup({
                 PINNED_AGENT_GROUP_COLLAPSE_KEY,
                 false
               )
-              setStatusFilter((current) => toggleStatusFilter(current, filter))
+              togglePinnedStatusFilter(filter)
             }}
           />
         </div>
@@ -2352,8 +2268,9 @@ const StatusAgentGroup = React.memo(function StatusAgentGroup({
 }: StatusAgentGroupsProps & { status: AgentStatusGroup }) {
   // Only the idle agents can be many, so only they show a part at a time.
   const limited = status === "idle" && !searchActive
-  const [renderCount, setRenderCount] = React.useState(
-    INITIAL_PROJECT_AGENT_RENDER_COUNT
+  const [renderCount, setRenderCount] = useGroupRenderCount(
+    useMachineId(),
+    `status:${status}`
   )
   const agentKeys = useSelector(
     projectAgentsStore,
@@ -2416,18 +2333,11 @@ const StatusAgentGroup = React.memo(function StatusAgentGroup({
           <Button
             variant="ghost"
             className="h-8 justify-start pl-(--agent-text-left) text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-            onClick={() => {
-              if (showLess) {
-                setRenderCount(INITIAL_PROJECT_AGENT_RENDER_COUNT)
-                return
-              }
-              setRenderCount((current) =>
-                Math.min(
-                  unpinnedAgentKeys.length,
-                  current + PROJECT_AGENT_LOAD_MORE_COUNT
-                )
+            onClick={() =>
+              setRenderCount(
+                nextRenderCount(renderCount, unpinnedAgentKeys.length, showLess)
               )
-            }}
+            }
           >
             {showLess
               ? "Show less"
@@ -2652,11 +2562,15 @@ function machineSummaryEntry(agent: MachineAgentSummary): AgentListEntry {
 
 /**
  * The sidebar projects of a machine with their agents, as the machine
- * shows them when it is the machine of the page.
+ * shows them when it is the machine of the page. `projects` is the
+ * project list of this browser's copy of the machine's sidebar state, as
+ * the shell of the machine reads it; without a copy, the summary's list.
  */
-function groupMachineAgents(machine: MachineInfo) {
+function groupMachineAgents(
+  machine: MachineInfo,
+  projects = machine.summary?.projects ?? []
+) {
   const summary = machine.summary
-  const projects = summary?.projects ?? []
   const agentsByProject: Record<string, Array<AgentListEntry>> = {}
   for (const project of projects) agentsByProject[project] = []
   for (const agent of summary?.agents ?? []) {
@@ -2667,19 +2581,60 @@ function groupMachineAgents(machine: MachineInfo) {
 }
 
 /**
- * The pinned agent keys of another machine. They are part of the sidebar
- * state that the machine's server keeps, so this starts the sidebar sync of
- * that machine. The sync keeps the local copy and sends changes to it.
+ * The agents of a machine summary by project, as sidebar entries. The shell
+ * of a machine shows them in a project until its own list of the project
+ * loads, so the rows stay when the machine opens.
  */
-function useOtherMachinePinnedAgentKeys(machineId: string, online: boolean) {
+export function summaryAgentsByProject(
+  summary: MachineInfo["summary"]
+): Record<string, Array<AgentListEntry>> {
+  const agentsByProject: Record<string, Array<AgentListEntry>> = {}
+  for (const agent of summary?.agents ?? []) {
+    const project = agent.project || agent.cwd
+    ;(agentsByProject[project] ??= []).push(machineSummaryEntry(agent))
+  }
+  return agentsByProject
+}
+
+/** The stored project list of a machine, or null when this browser has none. */
+function readStoredMachineProjects(machineId: string) {
+  const stored = readStoredSidebarProjects(machineId)
+  return stored.hasStoredValue ? stored.projects : null
+}
+
+/**
+ * The project list and the pinned agent keys of another machine, from the
+ * same local copy of the machine's sidebar state that its shell reads, so
+ * the machine shows the same projects in the same order when it opens.
+ * The machine's server keeps the shared state, so this starts the sidebar
+ * sync of that machine. The sync keeps the local copy and sends changes to
+ * it.
+ */
+function useOtherMachineStoredSidebar(machineId: string, online: boolean) {
   const [keys, setKeys] = React.useState(() =>
     readStoredPinnedAgentKeys(machineId)
+  )
+  const [projects, setProjects] = React.useState(() =>
+    readStoredMachineProjects(machineId)
   )
 
   React.useEffect(() => {
     if (!online) return
     const contextId = viewerContextIdForSummaries()
     if (contextId) startSidebarSync(machineId, contextId)
+    // Only the shown machine gets the changes of other devices on its event
+    // stream. Read the shared state again when the machine stops showing,
+    // and when the window comes back.
+    refreshSidebarState(machineId)
+    const refresh = () => {
+      if (document.visibilityState === "visible") refreshSidebarState(machineId)
+    }
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", refresh)
+    }
   }, [machineId, online])
 
   useSmithEvent(
@@ -2688,6 +2643,8 @@ function useOtherMachinePinnedAgentKeys(machineId: string, online: boolean) {
       if (changedMachine !== machineId) return
       if (changed.includes("pinnedAgentKeys"))
         setKeys(readStoredPinnedAgentKeys(machineId))
+      if (changed.includes("projects"))
+        setProjects(readStoredMachineProjects(machineId))
     }
   )
 
@@ -2704,7 +2661,21 @@ function useOtherMachinePinnedAgentKeys(machineId: string, online: boolean) {
     setKeys(next)
   }
 
-  return [keys, toggle] as const
+  const setStoredProjects = (next: Array<string>) => {
+    machineLocalStorageSetItem(
+      machineId,
+      SIDEBAR_PROJECTS_STORAGE_KEY,
+      JSON.stringify(next)
+    )
+    setProjects(next)
+  }
+
+  return {
+    pinnedAgentKeys: keys,
+    togglePinnedKey: toggle,
+    storedProjects: projects,
+    setStoredProjects,
+  }
 }
 
 /** The content of the group of another machine of the hub. */
@@ -2723,34 +2694,15 @@ export function OtherMachineProjects({ machine }: { machine: MachineInfo }) {
  */
 function useOtherMachineSidebar(machine: MachineInfo) {
   const { isMobile, setOpenMobile } = useSidebar()
-  // Projects that this page removed, hidden until the summary of the
-  // machine stops showing them.
-  const [removedProjects, setRemovedProjects] = React.useState<
-    ReadonlySet<string>
-  >(() => new Set())
-  const summaryProjects = machine.summary?.projects
-  React.useEffect(() => {
-    setRemovedProjects((current) => {
-      const shown = new Set(summaryProjects ?? [])
-      const next = new Set([...current].filter((entry) => shown.has(entry)))
-      return next.size === current.size ? current : next
-    })
-  }, [summaryProjects])
-  const machineGrouped = groupMachineAgents(machine)
-  const allGrouped =
-    removedProjects.size === 0
-      ? machineGrouped
-      : {
-          ...machineGrouped,
-          projects: machineGrouped.projects.filter(
-            (project) => !removedProjects.has(project)
-          ),
-        }
+  const {
+    pinnedAgentKeys: storedPinnedKeys,
+    togglePinnedKey,
+    storedProjects,
+    setStoredProjects,
+  } = useOtherMachineStoredSidebar(machine.id, machine.state === "online")
+  const projectList = storedProjects ?? machine.summary?.projects ?? []
+  const allGrouped = groupMachineAgents(machine, projectList)
   const statusFilter = useAgentStatusFilter(machine.id)
-  const [storedPinnedKeys, togglePinnedKey] = useOtherMachinePinnedAgentKeys(
-    machine.id,
-    machine.state === "online"
-  )
   // A click on a count in the machine heading shows only the agents with
   // that state.
   let grouped = allGrouped
@@ -2771,20 +2723,13 @@ function useOtherMachineSidebar(machine: MachineInfo) {
       agentsByProject: filtered.filteredAgents,
     }
   }
-  const [stores] = React.useState(() => {
-    const collapsed = createCollapsedProjectStore(
-      machine.id,
-      // Stored name: do not change.
-      `smith-machine-collapsed-directories:${machine.id}`
-    )
-    collapsed.loadStored()
-    return {
-      agents: createProjectAgentsStore(grouped.agentsByProject, {}),
-      collapsed,
-      active: createActiveSidebarAgentStore(),
-      selected: createSelectedAgentKeyStore(),
-    }
-  })
+  const [stores] = React.useState(() => ({
+    agents: createProjectAgentsStore(grouped.agentsByProject, {}),
+    // The same store as the shell of the machine.
+    collapsed: collapsedProjectStoreFor(machine.id),
+    active: createActiveSidebarAgentStore(),
+    selected: createSelectedAgentKeyStore(),
+  }))
 
   React.useEffect(() => {
     stores.agents.setData(grouped.agentsByProject, {})
@@ -2850,19 +2795,10 @@ function useOtherMachineSidebar(machine: MachineInfo) {
       action: { type: "new-agent", project },
     })
   }
-  // The summary has the project list of the machine's server, so the new
-  // list starts from it. The sidebar sync sends it to the machine.
+  // The sidebar sync sends the new list to the machine.
   const removeProject = (project: string) => {
-    const next = (summaryProjects ?? []).filter(
-      (entry) => entry !== project && !removedProjects.has(entry)
-    )
     stores.collapsed.remove(project)
-    machineLocalStorageSetItem(
-      machine.id,
-      SIDEBAR_PROJECTS_STORAGE_KEY,
-      JSON.stringify(next)
-    )
-    setRemovedProjects((current) => new Set([...current, project]))
+    setStoredProjects(projectList.filter((entry) => entry !== project))
   }
   const projectActions: SidebarProjectActions = online
     ? { onCreateAgentInProject: createAgent, onRemoveProject: removeProject }
@@ -2939,11 +2875,7 @@ function OtherMachineGroupedProjects({ machine }: { machine: MachineInfo }) {
     grouped.projects.length === 0 &&
     pinnedAgentKeys.length === 0
   )
-    return (
-      <p className="px-(--sidebar-item-pad) py-1 text-xs text-sidebar-foreground/50">
-        No agents with these states.
-      </p>
-    )
+    return <NoFilteredAgents />
   if (!statusFilter && grouped.projects.length === 0) {
     if (!online) return null
     return <OtherMachineAddProjectButton machineId={machine.id} />
@@ -3004,8 +2936,31 @@ function OtherMachineGroupedProjects({ machine }: { machine: MachineInfo }) {
   )
 }
 
+/** A machine group with a state filter and no matching agents. */
+function NoFilteredAgents() {
+  return (
+    <p className="px-(--sidebar-item-pad) py-1 text-xs text-sidebar-foreground/50">
+      No agents with these states.
+    </p>
+  )
+}
+
 /** "Add project…" on a machine without projects. */
 function OtherMachineAddProjectButton({ machineId }: { machineId: string }) {
+  return (
+    <AddFirstProjectButton
+      onClick={() =>
+        openMachine(machineId, { action: { type: "add-project" } })
+      }
+    />
+  )
+}
+
+/**
+ * "Add project…" in the group of a machine without projects. The shown
+ * machine and the other machines show the same button.
+ */
+function AddFirstProjectButton({ onClick }: { onClick: () => void }) {
   const { isMobile, setOpenMobile } = useSidebar()
   return (
     <SidebarMenu>
@@ -3015,7 +2970,7 @@ function OtherMachineAddProjectButton({ machineId }: { machineId: string }) {
           className="text-sidebar-foreground/60"
           onClick={() => {
             if (isMobile) setOpenMobile(false)
-            openMachine(machineId, { action: { type: "add-project" } })
+            onClick()
           }}
         >
           <FolderPlusIcon className="text-sidebar-foreground/50" />
@@ -3139,7 +3094,10 @@ function useRegisterSidebarAgentSource(source: SidebarAgentSource | null) {
   const store = source?.store
   const activeAgentStore = source?.activeAgentStore
   const selectedAgentKeyStore = source?.selectedAgentKeyStore
-  React.useEffect(() => {
+  // A layout effect: when the page shows another machine, the source of
+  // the shell and the source from the summary change places before the
+  // browser paints, so the rows of the machine do not leave for a frame.
+  React.useLayoutEffect(() => {
     const current = latestRef.current
     if (!current || !store || !activeAgentStore || !selectedAgentKeyStore)
       return
@@ -3955,9 +3913,9 @@ function useAppSidebarView({
   )
   const [previewProjectOrder, setPreviewProjectOrder] =
     React.useState<Array<string> | null>(null)
-  const [collapsedProjectStore] = React.useState(() =>
-    createCollapsedProjectStore(machineId)
-  )
+  // The same store as the summary rows of the machine, when another
+  // machine shows (see `sidebar-view-state.ts`).
+  const collapsedProjectStore = collapsedProjectStoreFor(machineId)
   const [selectedAgentKeyStore] = React.useState(createSelectedAgentKeyStore)
   const [activeAgentStore] = React.useState(createActiveSidebarAgentStore)
   // With a group for each machine, the machine heading replaces the
@@ -4000,23 +3958,10 @@ function useAppSidebarView({
     })
   )
 
-  React.useEffect(() => {
-    collapsedProjectStore.loadStored()
-  }, [collapsedProjectStore])
-
   useSmithEvent("smith:collapse-projects", (detail) => {
     if (detail.machineId === machineId)
       collapsedProjectStore.setAll(collapseAllKeys, detail.collapsed)
   })
-
-  useSmithEvent(
-    "smith:sidebar-state",
-    ({ machineId: changedMachine, changed }) => {
-      if (changedMachine !== machineId) return
-      if (changed.includes("collapsedProjects"))
-        collapsedProjectStore.loadStored()
-    }
-  )
 
   React.useEffect(() => {
     if (projectOrderingEnabled) return
@@ -4380,7 +4325,21 @@ function useAppSidebarView({
                       ) : null}
                       <CollapsibleContent>
                         <SidebarGroupContent>
-                          {visibleProjects.length === 0 ? (
+                          {visibleProjects.length === 0 &&
+                          hasMachineGroups &&
+                          !searchActive ? (
+                            // The same as the group of the machine when
+                            // another machine shows.
+                            statusFilterActive ? (
+                              pinnedAgentKeys.length === 0 ? (
+                                <NoFilteredAgents />
+                              ) : null
+                            ) : (
+                              <AddFirstProjectButton
+                                onClick={onOpenAddProjectDialog}
+                              />
+                            )
+                          ) : visibleProjects.length === 0 ? (
                             <div className="p-2">
                               <Empty className="rounded-xl border border-dashed bg-sidebar-accent/10 py-10">
                                 <EmptyHeader>

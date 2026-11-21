@@ -21,7 +21,12 @@ import {
   type ProjectAgentsIndexData,
 } from "@/features/smith/app-shell-sidebar-store"
 import type { AppShellAgentWorkspaceHandle } from "@/features/smith/app-shell-types"
-import { AppSidebar, createProjectAgentsStore } from "@/features/smith/sidebar"
+import {
+  AppSidebar,
+  createProjectAgentsStore,
+  summaryAgentsByProject,
+} from "@/features/smith/sidebar"
+import { useActiveMachine } from "@/features/smith/machine-store"
 import {
   buildAgentTree,
   pinnedAgentTreeKeys,
@@ -133,15 +138,58 @@ function useAppShellSidebarControllerView({
     sidebarStore,
     (snapshot) => snapshot.derived.emptySidebarStateText
   )
-  const searchedProjectAgents = useAppShellSidebarValue(
+  const loadedProjectAgents = useAppShellSidebarValue(
     sidebarStore,
     (snapshot) => snapshot.derived.filteredProjectAgents,
     sameAgentEntryRecord
   )
-  const allPinnedSidebarAgents = useAppShellSidebarValue(
+  const loadedPinnedSidebarAgents = useAppShellSidebarValue(
     sidebarStore,
     (snapshot) => snapshot.derived.pinnedSidebarAgents
   )
+  // Until the agent list of a project loads, the project shows the agents
+  // of the machine's hub summary: the rows that the window showed while
+  // another machine showed. So the rows stay when the machine opens.
+  const machineSummary = useActiveMachine()?.summary
+  const unloadedProjects = useAppShellSidebarValue(
+    sidebarStore,
+    (snapshot) =>
+      snapshot.state.agentSearch.trim()
+        ? []
+        : snapshot.derived.baseSidebarProjects.filter(
+            (project) => !snapshot.state.projectIndexDataByPath[project]
+          ),
+    sameStringArray
+  )
+  const storedPinnedAgentKeys = useAppShellSidebarValue(
+    sidebarStore,
+    (snapshot) => snapshot.state.pinnedSidebarAgentKeys,
+    sameStringArray
+  )
+  let searchedProjectAgents = loadedProjectAgents
+  let allPinnedSidebarAgents = loadedPinnedSidebarAgents
+  if (machineSummary && unloadedProjects.length > 0) {
+    const summaryAgents = summaryAgentsByProject(machineSummary)
+    searchedProjectAgents = { ...loadedProjectAgents }
+    const seeded = new Map<string, AgentListEntry>()
+    for (const project of unloadedProjects) {
+      const agents = summaryAgents[project]
+      if (!agents?.length || loadedProjectAgents[project]?.length) continue
+      searchedProjectAgents[project] = agents
+      for (const entry of agents) seeded.set(agentListEntryKey(entry), entry)
+    }
+    const loadedPinnedKeys = new Set(
+      loadedPinnedSidebarAgents.map((entry) => agentListEntryKey(entry))
+    )
+    allPinnedSidebarAgents = storedPinnedAgentKeys.flatMap((key) => {
+      if (loadedPinnedKeys.has(key))
+        return loadedPinnedSidebarAgents.filter(
+          (entry) => agentListEntryKey(entry) === key
+        )
+      const entry = seeded.get(key)
+      return entry ? [entry] : []
+    })
+  }
   const searchedProjects = useAppShellSidebarValue(
     sidebarStore,
     (snapshot) => snapshot.derived.visibleProjects,
