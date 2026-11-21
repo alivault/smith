@@ -4,7 +4,7 @@ import {
   HourglassIcon,
   MessageCircleQuestionIcon,
   SquareIcon,
-  UsersIcon,
+  BotPlusIcon,
 } from "lucide-react"
 import { toast } from "@/lib/smith/toast"
 
@@ -271,7 +271,7 @@ function SpawnCard({ block }: ToolRendererProps) {
   return (
     <div className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
       <div className="flex items-center gap-2">
-        <UsersIcon className="size-4 shrink-0 text-muted-foreground" />
+        <BotPlusIcon className="size-4 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
         {live ? (
           <SubagentStatus subagent={live} />
