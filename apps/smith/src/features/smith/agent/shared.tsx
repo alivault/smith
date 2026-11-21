@@ -1,6 +1,11 @@
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRightIcon, RefreshCwIcon } from "lucide-react"
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  RefreshCwIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -17,7 +22,10 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
-import { MarkdownBlock } from "@/features/smith/markdown-renderer"
+import {
+  copyTextToClipboard,
+  MarkdownBlock,
+} from "@/features/smith/markdown-renderer"
 import { cn } from "@/lib/utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 
@@ -122,6 +130,7 @@ export function TextDialog({
   refreshMs,
   scrollToEnd = true,
   markdown = false,
+  copy = false,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -135,6 +144,8 @@ export function TextDialog({
   scrollToEnd?: boolean
   /** Render the text as Markdown. */
   markdown?: boolean
+  /** Show a button that copies the text. */
+  copy?: boolean
 }) {
   const machineId = useMachineId()
   const query = useQuery({
@@ -163,6 +174,12 @@ export function TextDialog({
     const element = preRef.current
     if (element && scrollToEnd) element.scrollTop = element.scrollHeight
   }, [query.data?.text, scrollToEnd])
+  const [copied, setCopied] = React.useState(false)
+  React.useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 1400)
+    return () => window.clearTimeout(timer)
+  }, [copied])
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
@@ -176,6 +193,18 @@ export function TextDialog({
               }
               onClick={() => void query.refetch()}
             />
+            {copy ? (
+              <IconAction
+                label={copied ? "Copied" : "Copy"}
+                disabled={!query.data?.text}
+                icon={copied ? <CheckIcon /> : <CopyIcon />}
+                onClick={() => {
+                  const text = query.data?.text
+                  if (text)
+                    void copyTextToClipboard(text).then(() => setCopied(true))
+                }}
+              />
+            ) : null}
           </DialogTitle>
         </DialogHeader>
         {markdown && query.data?.text ? (

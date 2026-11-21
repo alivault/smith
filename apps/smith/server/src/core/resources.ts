@@ -21,6 +21,10 @@ export type PiResources = {
   agentsFiles: Array<{ path: string; content: string }>
   appendSystemPrompt: string[]
   customSystemPrompt: string | undefined
+  /** The SYSTEM.md file of `customSystemPrompt`, if any. */
+  systemPromptPath: string | undefined
+  /** The APPEND_SYSTEM.md files of `appendSystemPrompt`. */
+  appendSystemPromptPaths: string[]
 }
 
 type CacheEntry = { loadedAt: number; resources: Promise<PiResources> }
@@ -61,6 +65,10 @@ export class ResourceCache {
       agentsFiles: loader.getAgentsFiles().agentsFiles,
       appendSystemPrompt: loader.getAppendSystemPrompt(),
       customSystemPrompt: loader.getSystemPrompt(),
+      systemPromptPath: loader.getSystemPromptSource()?.path,
+      appendSystemPromptPaths: loader
+        .getAppendSystemPromptSources()
+        .map(({ path }) => path),
     }
   }
 }

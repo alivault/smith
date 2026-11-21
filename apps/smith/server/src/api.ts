@@ -2154,6 +2154,22 @@ export function createApi(api: ApiContext) {
     return { ok: true, path, text }
   })
 
+  /**
+   * The system prompt of an agent: its sections in order, and the full text.
+   * With `section`, the text of one section, for a text dialog.
+   */
+  router.get("/api/agent/system-prompt", async (request) => {
+    const id = requireAgent(request)
+    const prompt = await agents.systemPrompt(id)
+    const key = stringField(request.query.get("section"))
+    if (key) {
+      const section = prompt.sections.find((candidate) => candidate.id === key)
+      if (!section) throw notFound(`No system prompt section ${key}`)
+      return { ok: true, id: key, text: section.text }
+    }
+    return { ok: true, ...prompt }
+  })
+
   // ---------------------------------------------------------------------------
   // Notifications
 
