@@ -311,24 +311,42 @@ function InstructionsSummary(props: AgentSectionProps) {
 }
 
 /** One part of the share bar. */
-type Segment = { key: string; tokens: number; color: string }
+type Segment = {
+  key: string
+  label: string
+  tokens: number
+  exact: boolean
+  color: string
+}
 
-/** One thin bar with a colored part for each count, as in Storage. */
+/**
+ * One thin bar with a colored part for each count, as in Storage. Each part
+ * names its count in a tooltip; a taller, clear hit area makes it easy to hover.
+ */
 function ShareBar({ segments }: { segments: Segment[] }) {
   const widths = shareWidths(segments.map((segment) => segment.tokens))
   if (!widths.some((width) => width > 0)) return null
+  const total = segments.reduce((sum, segment) => sum + segment.tokens, 0)
   return (
-    <div
-      aria-hidden="true"
-      className="mx-1.5 flex h-1.5 gap-px overflow-hidden rounded-full bg-muted"
-    >
+    <div aria-hidden="true" className="mx-1.5 flex gap-px">
       {segments.map((segment, index) =>
         widths[index] > 0 ? (
-          <span
+          <TitleTooltip
             key={segment.key}
-            className={cn("h-full min-w-0", segment.color)}
-            style={{ flex: `${widths[index]} 1 0%` }}
-          />
+            title={`${segment.label} · ${formatTokens({ tokens: segment.tokens, exact: segment.exact })} · ${Math.max(1, Math.round((segment.tokens / total) * 100))}%`}
+          >
+            <span
+              className="group/segment flex min-w-0 py-1"
+              style={{ flex: `${widths[index]} 1 0%` }}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-full transition-[filter] group-first/segment:rounded-l-full group-last/segment:rounded-r-full group-hover/segment:brightness-125",
+                  segment.color
+                )}
+              />
+            </span>
+          </TitleTooltip>
         ) : null
       )}
     </div>
@@ -584,19 +602,25 @@ function InstructionsSection(props: AgentSectionProps) {
   const segments: Segment[] = [
     ...parts.map((item, index) => ({
       key: item.key,
+      label: item.title,
       tokens: countOf(item)?.tokens ?? 0,
+      exact: countOf(item)?.exact ?? false,
       color: partColor(index),
     })),
     ...(tools && tools.items.length > 0
       ? [
           {
             key: "tools",
+            label: `Tools (${tools.items.length})`,
             tokens: tools.total.tokens - (overhead?.tokens ?? 0),
+            exact: tools.total.exact,
             color: TOOLS_COLOR,
           },
           {
             key: "tools:overhead",
+            label: "Tool use overhead",
             tokens: overhead?.tokens ?? 0,
+            exact: overhead?.exact ?? false,
             color: cn(TOOLS_COLOR, "opacity-50"),
           },
         ]
