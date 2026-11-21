@@ -14,6 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Spinner } from "@/components/ui/spinner"
+import { useMachineFeature } from "@/features/smith/machine-store"
 import {
   useAgentExtensions,
   type AgentExtensionState,
@@ -32,7 +33,13 @@ import {
 export type AgentSectionProps = {
   state: AgentExtensionState
   viewerContextId: string
+  /** Empty for a preview of a new agent (`draft`). */
   agentId: string
+  /**
+   * A new agent that has no prompt yet: the sections with `preview` show
+   * what it would get. `model` is `provider/id`.
+   */
+  draft?: { cwd: string; model?: string }
   cwd?: string
   /** Open a file of the agent folder in the Files tab. */
   onOpenFile?: (path: string) => void
@@ -45,6 +52,11 @@ export type AgentSection = {
   order: number
   /** Whether the section starts open. The user's choice is remembered. */
   defaultOpen?: boolean
+  /**
+   * Whether the section also shows for a new agent before its first prompt,
+   * as a preview (`AgentSectionProps.draft`).
+   */
+  preview?: boolean
   /** Whether the section has something to show. */
   visible(state: AgentExtensionState): boolean
   /** Whether the agent has live work here, such as a running job. */
@@ -113,16 +125,20 @@ export function AgentPanel({
   cwd,
   onOpenFile,
   agentId,
+  draftModel,
   viewerContextId,
 }: {
   active: boolean
   cwd?: string
   onOpenFile?: (path: string) => void
   agentId?: string
+  /** The model of the new agent, as `provider/id`, for the preview. */
+  draftModel?: string
   viewerContextId: string
 }) {
   const query = useAgentExtensions(viewerContextId, agentId, active)
   const { isOpen, setOpen } = useOpenSections()
+  const previewAvailable = useMachineFeature("system-prompt-preview")
   const state = query.data
   const visible = state
     ? [...sections.values()]
@@ -130,6 +146,34 @@ export function AgentPanel({
         .sort((left, right) => left.order - right.order)
     : []
 
+  if (!agentId && cwd && previewAvailable) {
+    // A new agent: what it would get, from the sections that can preview.
+    const props: AgentSectionProps = {
+      cwd,
+      onOpenFile,
+      agentId: "",
+      draft: { cwd, ...(draftModel ? { model: draftModel } : {}) },
+      state: {},
+      viewerContextId,
+    }
+    return (
+      <div className="h-full min-h-0 overflow-y-auto">
+        {[...sections.values()]
+          .filter((section) => section.preview)
+          .sort((left, right) => left.order - right.order)
+          .map((section) => (
+            <AgentSectionView
+              key={section.key}
+              // The only content here: open unless the user closed it.
+              open={isOpen({ ...section, defaultOpen: true })}
+              onOpenChange={(open) => setOpen(section.key, open)}
+              section={section}
+              sectionProps={props}
+            />
+          ))}
+      </div>
+    )
+  }
   if (!agentId) {
     return (
       <AgentPanelEmpty

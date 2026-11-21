@@ -260,6 +260,7 @@ export function createApi(api: ApiContext) {
         "mcp",
         "mcp-oauth",
         "agent-panel",
+        "system-prompt-preview",
         "todo",
         "ask-user",
         "background-jobs",
@@ -2165,21 +2166,28 @@ export function createApi(api: ApiContext) {
   })
 
   router.get("/api/agent/instructions", async (request) => {
-    const id = requireAgent(request)
     const path = stringField(request.query.get("path"))
     if (!path) throw badRequest("path is required")
-    const text = await agents.instructionFile(id, path)
+    // Without an agent: a file of the preview for a new agent in `cwd`.
+    const id = agentOf(request)
+    const text = id
+      ? await agents.instructionFile(id, path)
+      : (
+          await runtime.resources.get(await previewCwd(request))
+        ).agentsFiles.find((file) => file.path === path)?.content
     if (text === undefined) throw notFound(`No instruction file ${path}`)
     return { ok: true, path, text }
   })
 
   /**
-   * The system prompt of an agent: its sections in order, and the full text.
-   * With `section`, the text of one section, for a text dialog.
+   * The answer of a system prompt route: with `section`, the text of one
+   * section, for a text dialog; else the sections in order, the full text,
+   * and the token counts.
    */
-  router.get("/api/agent/system-prompt", async (request) => {
-    const id = requireAgent(request)
-    const { model, tools, ...prompt } = await agents.systemPrompt(id)
+  const promptAnswer = async (
+    request: Request,
+    { model, tools, ...prompt }: Awaited<ReturnType<typeof agents.systemPrompt>>
+  ) => {
     const key = stringField(request.query.get("section"))
     if (key) {
       const section = prompt.sections.find((candidate) => candidate.id === key)
@@ -2196,6 +2204,71 @@ export function createApi(api: ApiContext) {
     // made in the background (`tokens.pending`).
     const tokens = await promptTokens.count({ ...prompt, model, tools })
     return { ok: true, ...prompt, tokens }
+  }
+
+  /** The system prompt of an agent: its sections in order, and the full text. */
+  router.get("/api/agent/system-prompt", async (request) =>
+    promptAnswer(request, await agents.systemPrompt(requireAgent(request)))
+  )
+
+  /**
+   * The folder of a preview for a new agent: `cwd`, else the folder of the
+   * viewer's draft.
+   */
+  const previewCwd = async (request: Request) => {
+    const cwd = stringField(request.query.get("cwd"))
+    return cwd ? await files.canonicalDirectory(cwd) : baseCwd(request)
+  }
+
+  /**
+   * The new agent of a preview: the folder, profile, and model of the query
+   * (`model` as `provider/id`), else of the viewer's draft.
+   */
+  const previewInput = async (request: Request) => {
+    const draft = viewers.get(target(request).contextId)?.activeDraft
+    const cwd = await previewCwd(request)
+    const profile = stringField(request.query.get("profile")) ?? draft?.profile
+    const modelText = stringField(request.query.get("model"))
+    let model = draft?.model
+    if (modelText) {
+      const slash = modelText.indexOf("/")
+      if (slash <= 0) throw badRequest("model must be provider/id")
+      model = {
+        provider: modelText.slice(0, slash),
+        modelId: modelText.slice(slash + 1),
+      }
+      if (!runtime.models.getModel(model.provider, model.modelId))
+        throw badRequest(`Unknown model: ${modelText}`)
+    }
+    return {
+      cwd,
+      ...(profile ? { profile } : {}),
+      ...(model ? { model } : {}),
+    }
+  }
+
+  /**
+   * The system prompt that a new agent would get: for the Agent panel of a
+   * draft, before the first prompt creates the agent. Writes nothing.
+   */
+  router.get("/api/agent/system-prompt/preview", async (request) => {
+    const { profile, ...prompt } = await agents.previewSystemPrompt(
+      await previewInput(request)
+    )
+    const answer = await promptAnswer(request, prompt)
+    return "sections" in answer ? { ...answer, preview: { profile } } : answer
+  })
+
+  /** The token counts of a preview, after exact counts. */
+  router.get("/api/agent/system-prompt/preview/tokens", async (request) => {
+    const { model, tools, ...prompt } = await agents.previewSystemPrompt(
+      await previewInput(request)
+    )
+    const tokens = await promptTokens.count(
+      { ...prompt, model, tools },
+      { wait: true }
+    )
+    return { ok: true, tokens }
   })
 
   /** The token counts of the system prompt and tools, after exact counts. */

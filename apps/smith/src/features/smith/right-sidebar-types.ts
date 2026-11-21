@@ -42,6 +42,8 @@ export type RightSidebarProps = {
   cwd?: string
   /** The selected agent; absent for a draft. */
   agentId?: string
+  /** The model of the draft, as `provider/id`, for the system prompt preview. */
+  draftModel?: string
   active: boolean
   activeFilePath?: string
   activeTab?: RightSidebarTabValue

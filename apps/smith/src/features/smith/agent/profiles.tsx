@@ -71,7 +71,12 @@ function ProfileIcon({
 
 type ProfilesResponse = { ok: true; profiles: Array<Profile>; current: string }
 
-function useProfiles(viewerContextId: string, agentId?: string) {
+/** The profiles, and the current one of the agent or of the draft. */
+export function useProfiles(
+  viewerContextId: string,
+  agentId?: string,
+  enabled = true
+) {
   const machineId = useMachineId()
   return useQuery({
     queryKey: ["smith", "profiles", viewerContextId, agentId ?? "draft"],
@@ -83,7 +88,7 @@ function useProfiles(viewerContextId: string, agentId?: string) {
           agentId,
         })
       ),
-    enabled: Boolean(viewerContextId),
+    enabled: enabled && Boolean(viewerContextId),
   })
 }
 

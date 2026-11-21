@@ -1037,6 +1037,7 @@ export function RightSidebar({
   viewerContextId,
   cwd,
   agentId,
+  draftModel,
   active,
   activeFilePath = "",
   activeTab: controlledActiveTab,
@@ -1277,6 +1278,7 @@ export function RightSidebar({
             cwd={normalizedCwd}
             onOpenFile={(path) => openFile(path, { pin: true })}
             agentId={agentId}
+            draftModel={draftModel}
             viewerContextId={viewerContextId}
           />
         </div>

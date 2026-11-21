@@ -83,6 +83,12 @@ function shallowTerminalAgent(
   return left.cwd === right.cwd && left.agentId === right.agentId
 }
 
+/** The model of a draft, as `provider/id`, for the system prompt preview. */
+function draftModelOf(agentState: AgentState) {
+  const model = agentState.draft ? agentState.model : undefined
+  return model?.provider ? `${model.provider}/${model.id}` : undefined
+}
+
 const mobileTabTriggerClassName =
   "h-8 shrink-0 px-3 data-active:bg-muted dark:data-active:bg-muted"
 
@@ -151,6 +157,7 @@ const AppShellGitPanelController = React.memo(
     const agentId = useSelector(agentStore, (agentState) =>
       agentState.draft ? undefined : agentState.agentId
     )
+    const draftModel = useSelector(agentStore, draftModelOf)
     const activeFilePath = useSelector(
       rightSidebarStore,
       (state) => state.fileActivePath
@@ -178,6 +185,7 @@ const AppShellGitPanelController = React.memo(
           viewerContextId={viewerContextId}
           cwd={cwd}
           agentId={agentId}
+          draftModel={draftModel}
           active={active}
           activeFilePath={activeFilePath}
           activeTab={activeTab}
@@ -240,6 +248,7 @@ function AppShellDesktopGitPanel({
   const agentId = useSelector(agentStore, (agentState) =>
     agentState.draft ? undefined : agentState.agentId
   )
+  const draftModel = useSelector(agentStore, draftModelOf)
   const activeFilePath = useSelector(
     rightSidebarStore,
     (state) => state.fileActivePath
@@ -273,6 +282,7 @@ function AppShellDesktopGitPanel({
           viewerContextId={viewerContextId}
           cwd={cwd}
           agentId={agentId}
+          draftModel={draftModel}
           active={active}
           activeFilePath={activeFilePath}
           activeTab={activeTab}
@@ -757,6 +767,7 @@ function useAppShellTabsControllerView({
   const agentPaneAgentId = useSelector(agentStore, (agentState) =>
     agentState.draft ? undefined : agentState.agentId
   )
+  const draftModel = useSelector(agentStore, draftModelOf)
   const showTabsList = isMobile || !isDraftAgent || isAgentViewLoading
   const agentVisibleClassName =
     currentTab === "conversation"
@@ -961,6 +972,7 @@ function useAppShellTabsControllerView({
                   active={currentTab === "agent"}
                   cwd={terminalAgent.cwd}
                   agentId={agentPaneAgentId}
+                  draftModel={draftModel}
                   viewerContextId={viewerContextId}
                 />
               </React.Suspense>

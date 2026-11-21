@@ -14,6 +14,7 @@ import {
   registerAgentSection,
   type AgentSectionProps,
 } from "@/features/smith/agent/agent-panel"
+import { useProfiles } from "@/features/smith/agent/profiles"
 import { TextDialog } from "@/features/smith/agent/shared"
 import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import { useMachineId } from "@/lib/smith/machine-context"
@@ -64,10 +65,16 @@ type Part = {
 
 const SYSTEM_PROMPT_PATH = "/api/agent/system-prompt"
 const TOKENS_PATH = "/api/agent/system-prompt/tokens"
+const PREVIEW_PATH = "/api/agent/system-prompt/preview"
 
 function instructionsOf(state: Record<string, unknown>) {
   const value = state.instructions as Instructions | undefined
   return value && Array.isArray(value.files) ? value : undefined
+}
+
+/** The last name of a folder path. */
+function folderName(path: string) {
+  return path.replace(/\/+$/, "").split("/").pop() || path
 }
 
 /** The path from the agent folder, for a file inside it. */
@@ -163,17 +170,79 @@ function partsOf(sections: PromptSection[]): Part[] {
   return parts
 }
 
+/**
+ * Where the prompt comes from: the agent, or, for a new agent before its
+ * first prompt, a preview of what it would get.
+ */
+type PromptSource = {
+  path: string
+  tokensPath: string
+  agentId: string
+  searchParams: Record<string, string>
+  /** The folder of a preview. */
+  preview?: string
+}
+
+function sourceOf(
+  { agentId, draft }: Pick<AgentSectionProps, "agentId" | "draft">,
+  profile: string | undefined
+): PromptSource {
+  if (!draft)
+    return {
+      path: SYSTEM_PROMPT_PATH,
+      tokensPath: TOKENS_PATH,
+      agentId,
+      searchParams: {},
+    }
+  return {
+    path: PREVIEW_PATH,
+    tokensPath: `${PREVIEW_PATH}/tokens`,
+    agentId: "",
+    searchParams: {
+      cwd: draft.cwd,
+      ...(profile ? { profile } : {}),
+      ...(draft.model ? { model: draft.model } : {}),
+    },
+    preview: draft.cwd,
+  }
+}
+
+/** The source of the section's prompt; a preview follows the draft's profile. */
+function usePromptSource(
+  props: Pick<AgentSectionProps, "agentId" | "draft" | "viewerContextId">
+) {
+  // The profile of the draft, as the profile menu of the composer sets it.
+  const profiles = useProfiles(
+    props.viewerContextId,
+    undefined,
+    Boolean(props.draft)
+  )
+  return sourceOf(
+    props,
+    props.draft ? (profiles.data?.current ?? "full") : undefined
+  )
+}
+
 /** The data of the section: the prompt, and its exact counts when they come. */
-function useSystemPrompt(agentId: string, viewerContextId: string) {
+function useSystemPrompt(source: PromptSource, viewerContextId: string) {
   const machineId = useMachineId()
+  const { agentId, searchParams } = source
   const query = useQuery({
-    queryKey: ["smith", "system-prompt", viewerContextId, agentId],
+    queryKey: [
+      "smith",
+      "system-prompt",
+      viewerContextId,
+      agentId,
+      source.path,
+      searchParams,
+    ],
     queryFn: () =>
       fetchJson<SystemPrompt>(
-        buildRequestUrl(SYSTEM_PROMPT_PATH, {
+        buildRequestUrl(source.path, {
           machineId,
           contextId: viewerContextId,
           agentId,
+          searchParams,
         })
       ),
   })
@@ -186,22 +255,29 @@ function useSystemPrompt(agentId: string, viewerContextId: string) {
       "system-prompt-tokens",
       viewerContextId,
       agentId,
+      source.tokensPath,
+      searchParams,
       query.dataUpdatedAt,
     ],
     enabled: pending,
     retry: false,
     queryFn: () =>
       fetchJson<{ tokens: PromptTokens }>(
-        buildRequestUrl(TOKENS_PATH, {
+        buildRequestUrl(source.tokensPath, {
           machineId,
           contextId: viewerContextId,
           agentId,
+          searchParams,
         })
       ),
   })
   // The server tells when the agent gets a new or changed system prompt.
   useSmithEvent("smith:agent-extensions", (detail) => {
-    if (detail.agentId === agentId && detail.kind === "system_prompt")
+    if (
+      agentId &&
+      detail.agentId === agentId &&
+      detail.kind === "system_prompt"
+    )
       void query.refetch()
   })
   const tokens =
@@ -210,15 +286,12 @@ function useSystemPrompt(agentId: string, viewerContextId: string) {
 }
 
 /** The total in the section header, with the share of the context window. */
-function InstructionsSummary({
-  agentId,
-  state,
-  viewerContextId,
-}: AgentSectionProps) {
-  const { tokens } = useSystemPrompt(agentId, viewerContextId)
+function InstructionsSummary(props: AgentSectionProps) {
+  const source = usePromptSource(props)
+  const { tokens } = useSystemPrompt(source, props.viewerContextId)
   if (!tokens) {
     // Until the counts load, or from an older server: the files.
-    const count = instructionsOf(state)?.files.length ?? 0
+    const count = instructionsOf(props.state)?.files.length ?? 0
     return count > 0
       ? `${count} ${count === 1 ? "file" : "files"}`
       : "System prompt"
@@ -484,14 +557,12 @@ function FileRow({
   )
 }
 
-function InstructionsSection({
-  onOpenFile,
-  agentId,
-  state,
-  viewerContextId,
-}: AgentSectionProps) {
+function InstructionsSection(props: AgentSectionProps) {
+  const { onOpenFile, state, viewerContextId } = props
   const instructions = instructionsOf(state)
-  const { query, prompt, tokens } = useSystemPrompt(agentId, viewerContextId)
+  const source = usePromptSource(props)
+  const { agentId } = source
+  const { query, prompt, tokens } = useSystemPrompt(source, viewerContextId)
   const [openFile, setOpenFile] = React.useState<string | null>(null)
   /** The key of the open part, or null for the full system prompt. */
   const [openPart, setOpenPart] = React.useState<string | null | undefined>()
@@ -534,6 +605,13 @@ function InstructionsSection({
   const partCount = part ? countOf(part) : undefined
   return (
     <>
+      {source.preview ? (
+        <TitleTooltip title={source.preview}>
+          <p className="truncate px-1.5 pb-2 text-xs text-muted-foreground">
+            Preview for a new agent in {folderName(source.preview)}
+          </p>
+        </TitleTooltip>
+      ) : null}
       {prompt ? (
         <div className="space-y-3 pt-1">
           {tokens ? <ShareBar segments={segments} /> : null}
@@ -588,7 +666,10 @@ function InstructionsSection({
           }}
           title={labelOf(openFile, cwd)}
           path="/api/agent/instructions"
-          searchParams={{ path: openFile }}
+          searchParams={{
+            path: openFile,
+            ...(source.preview ? { cwd: source.preview } : {}),
+          }}
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}
@@ -602,17 +683,19 @@ function InstructionsSection({
             if (!next) setOpenPart(undefined)
           }}
           title="Full system prompt"
-          path={SYSTEM_PROMPT_PATH}
-          searchParams={{}}
+          path={source.path}
+          searchParams={source.searchParams}
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}
           copy
           details={
             <DialogDescription>
-              {prompt.sent
-                ? "The conversation messages come after the system prompt. When a part changes, the agent gets only that part again, as an update."
-                : "Not sent yet: the agent gets this with its first message, before the conversation. When a part changes later, the agent gets only that part again, as an update."}
+              {source.preview
+                ? "A preview: a new agent in this folder gets this with its first message, before the conversation. When a part changes later, the agent gets only that part again, as an update."
+                : prompt.sent
+                  ? "The conversation messages come after the system prompt. When a part changes, the agent gets only that part again, as an update."
+                  : "Not sent yet: the agent gets this with its first message, before the conversation. When a part changes later, the agent gets only that part again, as an update."}
               {prompt.sent && prompt.updates > 0
                 ? ` ${prompt.updates} ${prompt.updates === 1 ? "update" : "updates"} so far.`
                 : ""}
@@ -627,8 +710,9 @@ function InstructionsSection({
             if (!next) setOpenPart(undefined)
           }}
           title={part.title}
-          path={SYSTEM_PROMPT_PATH}
+          path={source.path}
           searchParams={{
+            ...source.searchParams,
             section: part.section.id,
             ...(part.key === "project_context:global"
               ? { scope: "global" }
@@ -669,6 +753,8 @@ registerAgentSection({
   defaultOpen: false,
   // Every agent has a system prompt.
   visible: () => true,
+  // A new agent also gets a system prompt: show it before the first prompt.
+  preview: true,
   Summary: InstructionsSummary,
   Component: InstructionsSection,
 })

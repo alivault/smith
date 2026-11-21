@@ -1065,6 +1065,75 @@ export class Agents implements HostAgents {
     return { ...prompt, model }
   }
 
+  /**
+   * The system prompt that a new agent in `cwd` would get, with `profile`
+   * and `model` (default: the default ones). The agent is made as `create`
+   * makes it, but in an empty Harness in memory, so nothing is written to
+   * the database. Sections without text are left out: they need a
+   * conversation.
+   */
+  async previewSystemPrompt(input: {
+    cwd: string
+    profile?: string
+    model?: { provider: string; modelId: string }
+  }) {
+    const { cwd } = input
+    const modelRef = input.model ?? this.defaultModel()
+    const profile =
+      input.profile && input.profile !== "full"
+        ? findProfile(input.profile, this.#runtime.settings.data.profiles)
+        : undefined
+    if (input.profile && input.profile !== "full" && !profile)
+      throw badRequest(`Unknown profile: ${input.profile}`)
+    const harness = await this.#runtime.openPreviewHarness()
+    try {
+      const conversation = await harness.createConversation(
+        {
+          ownership: { kind: "ownerless" },
+          agent: {
+            ...(modelRef ? { model: modelRef } : {}),
+            thinkingLevel: this.defaultThinkingLevel(),
+            cwd,
+          },
+        },
+        ctx
+      )
+      if (profile && profile.name !== "full")
+        await applyProfile(conversation, this.#runtime.registry, profile, ctx)
+      const agent = await conversation.agent(ctx)
+      const resources = await this.#runtime.resources
+        .get(cwd)
+        .catch((error: unknown) => {
+          console.warn("[smith] could not read the prompt resources:", error)
+          return undefined
+        })
+      const prompt = await systemPromptOf({
+        cwd,
+        messages: [],
+        agent,
+        env: () => executionEnv(cwd),
+        read: harness,
+        conversationId: conversation.id,
+        resources,
+        agentDir: this.#runtime.agentDir,
+        context: ctx,
+      })
+      const sections = prompt.sections.filter(
+        (section) =>
+          section.text.trim() !== "" &&
+          section.text.trim() !== `<${section.id}>\n\n</${section.id}>`
+      )
+      return {
+        ...prompt,
+        sections,
+        profile: profile?.name ?? "full",
+        model: this.#model(modelRef),
+      }
+    } finally {
+      await harness.close(ctx)
+    }
+  }
+
   /** The content of one context file that the agent of an agent loads. */
   async instructionFile(id: string, path: string) {
     const files = (await this.#runtime.resources.get(this.meta(id).cwd))

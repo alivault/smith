@@ -18,11 +18,13 @@ import {
   type CompactionSettings,
   createRegistry,
   Harness,
+  type HarnessOptions,
   type HarnessSettings,
   type Registry,
 } from "@earendil-works/pi-durable"
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode"
 import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node"
+import { MemoryStorage } from "@earendil-works/pi-durable/storage/memory"
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 
 import type { ServerPaths } from "../config.ts"
@@ -66,6 +68,11 @@ export type Runtime = {
     provider: string
     modelId: string
   }): CompactionPolicy
+  /**
+   * A Harness like `harness`, but in memory and empty: for a preview of a new
+   * agent, without a write to the database. Close it after use.
+   */
+  openPreviewHarness(): Promise<Harness>
   close(): Promise<void>
 }
 
@@ -202,16 +209,17 @@ export async function openRuntime(
     return compaction.value
   }
 
+  const harnessOptions: HarnessOptions = {
+    models,
+    registry,
+    settings: harnessSettings,
+    env: ({ cwd }) => executionEnv(cwd),
+    onReport: (error) => console.warn("[smith] durable report:", error),
+  }
   const storage = await openNodeSqliteStorage(paths.database)
   const harness = await Harness.open(
     storage,
-    {
-      models,
-      registry,
-      settings: harnessSettings,
-      env: ({ cwd }) => executionEnv(cwd),
-      onReport: (error) => console.warn("[smith] durable report:", error),
-    },
+    harnessOptions,
     BACKGROUND_CONTEXT
   )
 
@@ -228,6 +236,8 @@ export async function openRuntime(
     piSettings: currentPiSettings,
     compactionPolicy: (model) =>
       modelCompactionPolicy(currentCompaction(), model),
+    openPreviewHarness: () =>
+      Harness.open(new MemoryStorage(), harnessOptions, BACKGROUND_CONTEXT),
     async close() {
       await mcp.close()
       await harness.close(BACKGROUND_CONTEXT)
