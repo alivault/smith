@@ -6,6 +6,9 @@ import {
   formatTokens,
   methodLabel,
   estimateNote,
+  partColor,
+  rankTools,
+  TOOLS_COLOR,
   summaryLines,
   shareWidths,
   type PromptTokens,
@@ -73,6 +76,22 @@ describe("prompt token counts", () => {
     expect(summaryLines(tokensOf({ cacheRead: 0.05 }))).toContain(
       "Cached after the first request: about 5% of the input price."
     )
+  })
+})
+
+describe("tool ranking", () => {
+  it("sorts by size and colors only the largest", () => {
+    const items = [10, 50, 30, 20, 40, 60, 5].map((tokens, index) => ({
+      name: `t${index}`,
+      tokens,
+    }))
+    const ranked = rankTools(items, 2)
+    expect(ranked.map((item) => item.tokens)).toEqual([
+      60, 50, 40, 30, 20, 10, 5,
+    ])
+    expect(ranked[0].color).toBe(partColor(0))
+    expect(ranked[1].color).toBe(partColor(1))
+    expect(ranked[2].color).toBe(TOOLS_COLOR)
   })
 })
 

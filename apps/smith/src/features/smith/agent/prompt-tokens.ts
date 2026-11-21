@@ -139,3 +139,22 @@ export const TOOLS_COLOR = "bg-zinc-400 dark:bg-zinc-500"
 export function partColor(index: number) {
   return PART_COLORS[index % PART_COLORS.length]
 }
+
+/**
+ * The tools by size, largest first, each with its color: as in Storage, only
+ * the largest few get a color; the rest share the neutral one.
+ */
+export function rankTools<T extends { name: string; tokens: number }>(
+  items: readonly T[],
+  colored = 5
+) {
+  return [...items]
+    .sort(
+      (left, right) =>
+        right.tokens - left.tokens || left.name.localeCompare(right.name)
+    )
+    .map((item, index) => ({
+      ...item,
+      color: index < colored ? partColor(index) : TOOLS_COLOR,
+    }))
+}

@@ -22,6 +22,7 @@ import { useSmithEvent } from "@/features/smith/agent/events"
 import {
   formatTokens,
   partColor,
+  rankTools,
   estimateNote,
   summaryLines,
   shareWidths,
@@ -459,28 +460,62 @@ function ToolsDialog({
   tokens: PromptTokens
   onOpenChange: (open: boolean) => void
 }) {
-  const { items } = tokens.tools
+  const { items, overhead } = tokens.tools
+  const ranked = rankTools(items)
+  const shownOverhead = overhead && overhead.tokens > 0 ? overhead : undefined
+  const rows = [
+    ...ranked,
+    ...(shownOverhead
+      ? [
+          {
+            ...shownOverhead,
+            name: "Tool use overhead",
+            color: cn(TOOLS_COLOR, "opacity-50"),
+          },
+        ]
+      : []),
+  ]
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Tools ({items.length})</DialogTitle>
           <DialogDescription>
-            The name, description, and input schema of each tool. Each request
-            sends them.
+            The name, description, and input schema of each tool, largest first.
+            Each request sends them.
           </DialogDescription>
         </DialogHeader>
-        <ul className="max-h-[60vh] overflow-auto rounded-md border p-1">
-          {items.map((tool) => (
+        <ShareBar
+          segments={rows.map((row) => ({
+            key: row.name,
+            label: row.name,
+            tokens: row.tokens,
+            exact: row.exact,
+            color: row.color,
+          }))}
+        />
+        <ul className="max-h-[60vh] overflow-auto">
+          {rows.map((row) => (
             <li
-              key={tool.name}
+              key={row.name}
               className="flex h-7 min-w-0 items-center gap-2 px-1.5 text-sm"
             >
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                {tool.name}
+              <span
+                aria-hidden="true"
+                className={cn("size-2 shrink-0 rounded-full", row.color)}
+              />
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate",
+                  row === rows[rows.length - 1] && shownOverhead
+                    ? "text-muted-foreground"
+                    : "font-mono text-xs"
+                )}
+              >
+                {row.name}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {formatTokens(tool)}
+                {formatTokens(row)}
               </span>
             </li>
           ))}
