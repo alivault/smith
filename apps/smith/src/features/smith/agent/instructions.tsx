@@ -9,6 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import {
   registerAgentSection,
@@ -380,6 +385,10 @@ function GroupFooter({ children }: { children: React.ReactNode }) {
   return <p className="px-1.5 pt-1 text-xs text-muted-foreground">{children}</p>
 }
 
+const HIDDEN_TOOL_PROMPT = "Hidden tool prompt"
+const HIDDEN_TOOL_PROMPT_INFO =
+  "Anthropic adds this prompt to each request that has tools. It tells the model how to call them. You can't see or change it, and it's sent once, not for each tool."
+
 const ROW_CLASS =
   "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm outline-none"
 
@@ -394,6 +403,7 @@ function Row({
   count,
   label,
   onClick,
+  info,
 }: {
   color?: string
   name: string
@@ -401,6 +411,8 @@ function Row({
   count?: TokenCount
   label?: string
   onClick?: () => void
+  /** A short explanation that a click on the row shows in a popover. */
+  info?: React.ReactNode
 }) {
   const content = (
     <>
@@ -426,11 +438,36 @@ function Row({
         aria-hidden="true"
         className={cn(
           "size-3.5 shrink-0 text-muted-foreground",
-          !onClick && "invisible"
+          !onClick && !info && "invisible"
         )}
       />
     </>
   )
+  const buttonClass = cn(
+    ROW_CLASS,
+    "hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50"
+  )
+  if (info)
+    return (
+      <li>
+        <Popover>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                aria-label={label}
+                className={buttonClass}
+              />
+            }
+          >
+            {content}
+          </PopoverTrigger>
+          <PopoverContent side="bottom" align="end" className="text-xs">
+            {info}
+          </PopoverContent>
+        </Popover>
+      </li>
+    )
   return (
     <li>
       {onClick ? (
@@ -469,7 +506,7 @@ function ToolsDialog({
       ? [
           {
             ...shownOverhead,
-            name: "Tool use overhead",
+            name: HIDDEN_TOOL_PROMPT,
             color: cn(TOOLS_COLOR, "opacity-50"),
           },
         ]
@@ -548,7 +585,9 @@ function ToolsGroup({ tokens }: { tokens: PromptTokens }) {
         {shownOverhead ? (
           <Row
             color={cn(TOOLS_COLOR, "opacity-50")}
-            name="Tool use overhead"
+            name={HIDDEN_TOOL_PROMPT}
+            label={`About the ${HIDDEN_TOOL_PROMPT.toLowerCase()}`}
+            info={HIDDEN_TOOL_PROMPT_INFO}
             count={shownOverhead}
           />
         ) : null}
@@ -656,7 +695,7 @@ function InstructionsSection(props: AgentSectionProps) {
           },
           {
             key: "tools:overhead",
-            label: "Tool use overhead",
+            label: HIDDEN_TOOL_PROMPT,
             tokens: overhead?.tokens ?? 0,
             exact: overhead?.exact ?? false,
             color: cn(TOOLS_COLOR, "opacity-50"),
