@@ -28,7 +28,7 @@ import {
 } from "@/features/smith/tanstack-store-utils"
 import { emitSmithEvent } from "@/features/smith/agent/events"
 import {
-  ContextUsageSeparateRings,
+  ContextUsageBars,
   ContextUsageQuotaDetails,
   ContextUsageRings,
   ContextUsageWindowDetails,
@@ -154,15 +154,15 @@ export const ComposerContextUsage = React.memo(function ComposerContextUsage({
     viewerContextId,
   })
   const triggerRef = React.useRef<HTMLButtonElement>(null)
-  const separateRef = React.useRef<HTMLSpanElement>(null)
+  const barsRef = React.useRef<HTMLSpanElement>(null)
   const compactRef = React.useRef<HTMLSpanElement>(null)
-  const fit = useSeparateRingsFit(
+  const fit = useUsageBarsFit(
     triggerRef,
-    separateRef,
+    barsRef,
     compactRef,
     view?.rings.length ?? 0
   )
-  const separateFits = fit !== "merged"
+  const barsFit = fit !== "merged"
   if (!view) return null
 
   return (
@@ -182,8 +182,8 @@ export const ComposerContextUsage = React.memo(function ComposerContextUsage({
             ? "Context usage"
             : `${view.displayPercent} of the context used`
         }
-        // The labeled rings say the same, so the tooltip shows only for the
-        // merged rings, where the row has no room for the labels.
+        // The labeled bars say the same, so the tooltip shows only for the
+        // merged rings and for bars without labels.
         openWhen={() => fit !== "labeled"}
       >
         <DropdownMenuTrigger
@@ -193,27 +193,27 @@ export const ComposerContextUsage = React.memo(function ComposerContextUsage({
               variant="ghost"
               size="xs"
               ref={triggerRef}
-              // Separate labeled rings when they fit in the row below the
+              // Labeled bars when they fit in the row below the
               // composer (also on a phone), merged rings when they do not.
               className={cn(
                 "relative h-7 shrink-0 cursor-pointer",
-                separateFits ? "px-2" : "px-0"
+                barsFit ? "px-2" : "px-0"
               )}
               aria-label={view.ariaLabel}
             />
           }
         >
-          {separateFits ? null : (
+          {barsFit ? null : (
             <ContextUsageRings view={view} className="size-7" />
           )}
           {/* Both always rendered, so their widths can be measured; out of
               the layout and invisible while not chosen. */}
-          <ContextUsageSeparateRings
-            ref={separateRef}
+          <ContextUsageBars
+            ref={barsRef}
             view={view}
             className={fit === "labeled" ? "flex" : MEASURE_ONLY}
           />
-          <ContextUsageSeparateRings
+          <ContextUsageBars
             ref={compactRef}
             view={view}
             labels={false}
@@ -241,12 +241,12 @@ export const ComposerContextUsage = React.memo(function ComposerContextUsage({
 const MEASURE_ONLY = "invisible absolute top-0 left-0 flex"
 
 /**
- * How the usage rings fit in the row of the composer controls: separate
- * with labels, separate without labels, or merged into one. It compares the
+ * How the usage fits in the row of the composer controls: bars
+ * with labels, bars without labels, or merged rings. It compares the
  * row width less the other controls with the natural widths of the two
- * separate forms (plus the trigger padding).
+ * bar forms (plus the trigger padding).
  */
-function useSeparateRingsFit(
+function useUsageBarsFit(
   triggerRef: React.RefObject<HTMLButtonElement | null>,
   labeledRef: React.RefObject<HTMLSpanElement | null>,
   compactRef: React.RefObject<HTMLSpanElement | null>,
@@ -277,7 +277,7 @@ function useSeparateRingsFit(
         (parseFloat(style.paddingRight) || 0) -
         others -
         gap * count
-      // 16 px: the trigger's padding when it shows separate rings.
+      // 16 px: the trigger's padding when it shows bars.
       setFit(
         labeled.scrollWidth + 16 <= available
           ? "labeled"

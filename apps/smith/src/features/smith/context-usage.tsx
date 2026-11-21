@@ -794,11 +794,11 @@ function contextUsageBarLabel(ring: ContextUsageRing) {
 }
 
 /**
- * The usage as separate labeled rings in one line: the context window, then
+ * The usage as small labeled bars in one line: the context window, then
  * the 5h and the weekly usage. The merged rings show the same where there
  * is no room for this.
  */
-export function ContextUsageSeparateRings({
+export function ContextUsageBars({
   view,
   className,
   ref,
@@ -807,32 +807,51 @@ export function ContextUsageSeparateRings({
   view: ContextUsageView
   className?: string
   ref?: Ref<HTMLSpanElement>
-  /** False on a narrow row: only each ring and its percent. */
+  /** False on a narrow row: only each bar and its percent. */
   labels?: boolean
 }) {
   return (
     <span
       ref={ref}
-      data-usage-separate-rings=""
+      data-usage-bars=""
       className={cn("flex items-center gap-3 text-xs", className)}
       aria-hidden="true"
     >
       {view.rings.map((ring) => (
-        <span key={ring.key} className="flex items-center gap-1">
-          <ContextUsageRings
-            view={{
-              ...view,
-              rings: [ring],
-              compactAtPercent:
-                ring.key === "context" ? view.compactAtPercent : null,
-            }}
-            className="size-5 shrink-0"
-          />
+        <span key={ring.key} className="flex items-center gap-1.5">
           {labels ? (
             <span className="text-muted-foreground">
               {contextUsageBarLabel(ring)}
             </span>
           ) : null}
+          <span className="relative h-1 w-10 overflow-hidden rounded-full bg-foreground/15">
+            {ring.percent == null ? null : (
+              <span
+                className="absolute inset-y-0 left-0"
+                style={{
+                  width: `${ring.percent}%`,
+                  backgroundColor: contextUsageStroke(
+                    ring.percent,
+                    ring.pacePercent
+                  ),
+                }}
+              />
+            )}
+            {/* The compaction point of the context, and how much of the
+                5h or week window passed: usage left of it is on pace. */}
+            {[
+              ring.key === "context" ? view.compactAtPercent : null,
+              ring.pacePercent,
+            ].map((mark, index) =>
+              mark == null ? null : (
+                <span
+                  key={index}
+                  className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground/60"
+                  style={{ left: `${Math.max(0, Math.min(100, mark))}%` }}
+                />
+              )
+            )}
+          </span>
           <span className="text-foreground/80 tabular-nums">
             {ring.percent == null
               ? "–"
