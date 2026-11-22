@@ -268,7 +268,12 @@ function useUsageBarsFit(
       let count = 0
       for (const child of Array.from(row.children)) {
         if (child === trigger || !(child instanceof HTMLElement)) continue
-        others += child.getBoundingClientRect().width
+        // The natural width: a control that the bars squeeze is narrower
+        // than its text, and its text then runs under the bars.
+        others += Math.max(
+          child.getBoundingClientRect().width,
+          child.scrollWidth
+        )
         count += 1
       }
       const available =
@@ -291,6 +296,11 @@ function useUsageBarsFit(
     observer.observe(row)
     observer.observe(labeled)
     observer.observe(compact)
+    // The other controls change width too: a new model or reasoning label.
+    for (const child of Array.from(row.children))
+      if (child !== trigger) observer.observe(child)
+    // Labels measured before the web font loads are too narrow.
+    void document.fonts?.ready.then(measure)
     return () => observer.disconnect()
   }, [triggerRef, labeledRef, compactRef, ringCount])
   return fit
