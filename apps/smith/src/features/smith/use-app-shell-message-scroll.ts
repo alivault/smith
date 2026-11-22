@@ -97,6 +97,47 @@ function nextMessageJumpTop(viewport: HTMLElement) {
 
 // The primitive stops follow-output on wheel, touch, and scroll keys. A
 // synthetic wheel event reuses that path for other reader signals.
+/** How long after a jump the rest of a trackpad fling is dropped. */
+const MOMENTUM_GUARD_MS = 900
+
+/**
+ * Stop the scroll momentum of a fling, so a jump lands where it should. A
+ * smooth scroll stops it as a side effect; an instant jump does not:
+ * - Touch (WebKit): momentum ends when the scroller stops being one for a
+ *   moment.
+ * - Trackpad: the system sends the rest of the fling as wheel events with
+ *   falling deltas. Drop them for a short time, until a delta grows again,
+ *   which is a new gesture of the reader.
+ */
+function stopMomentum(viewport: HTMLElement) {
+  const overflow = viewport.style.overflowY
+  viewport.style.overflowY = "hidden"
+  void viewport.offsetHeight
+  viewport.style.overflowY = overflow
+
+  const until = performance.now() + MOMENTUM_GUARD_MS
+  let last = Number.POSITIVE_INFINITY
+  const onWheel = (event: WheelEvent) => {
+    if (!event.isTrusted) return
+    const delta = Math.abs(event.deltaY)
+    if (performance.now() > until || delta > last * 1.5 + 1) {
+      viewport.removeEventListener("wheel", onWheel, { capture: true })
+      return
+    }
+    last = delta
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  viewport.addEventListener("wheel", onWheel, {
+    capture: true,
+    passive: false,
+  })
+  window.setTimeout(
+    () => viewport.removeEventListener("wheel", onWheel, { capture: true }),
+    MOMENTUM_GUARD_MS
+  )
+}
+
 function releaseFollowOutput(viewport: HTMLElement) {
   viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }))
 }
@@ -192,6 +233,7 @@ export function useAppShellMessageScroll() {
     const top = getTop(viewport)
     if (top === null) return
     releaseFollowOutput(viewport)
+    stopMomentum(viewport)
     viewport.scrollTo({
       top: Math.max(0, top - JUMP_OFFSET_PX),
       behavior: "auto",
@@ -201,9 +243,11 @@ export function useAppShellMessageScroll() {
   const jumpToPreviousMessage = () => jumpTo(previousMessageJumpTop)
   const jumpToNextMessage = () => jumpTo(nextMessageJumpTop)
   const scrollConversationToBottom = () => {
+    if (viewport) stopMomentum(viewport)
     scrollToEnd({ behavior: "auto" })
   }
   const scrollConversationToTop = () => {
+    if (viewport) stopMomentum(viewport)
     scrollToStart({ behavior: "auto" })
   }
 
