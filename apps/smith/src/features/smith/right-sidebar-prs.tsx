@@ -639,7 +639,7 @@ function PrList({
       </div>
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-1 pb-2 transition-opacity [&>*:last-child_[data-row-separator]]:border-transparent",
+          "safe-scroll-end min-h-0 flex-1 overflow-y-auto px-1 pb-2 transition-opacity [&>*:last-child_[data-row-separator]]:border-transparent",
           stale && "opacity-50"
         )}
       >
@@ -1582,7 +1582,13 @@ function PrDetail({
           </TitleTooltip>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          // Without the review footer, it is at the bottom edge.
+          !(pr && canReview && !pr.partial) && "safe-scroll-end"
+        )}
+      >
         {prQuery.isPending && !pr ? (
           <GitSectionNote className="px-4 py-3">
             <Spinner /> Loading the pull request…

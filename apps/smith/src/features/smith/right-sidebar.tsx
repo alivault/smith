@@ -956,7 +956,7 @@ function CommitDiffContent({
       <div className="relative min-h-0 flex-1">
         <div
           ref={setDiffScrollElement}
-          className="h-full overflow-auto"
+          className="safe-scroll-end h-full overflow-auto"
           onScroll={(event) => {
             updateStickyCommitFileHeader(event.currentTarget)
             onDiffScrollGradientScroll(event)
@@ -1292,7 +1292,7 @@ export function RightSidebar({
           </div>
         ) : null}
         {activeTab === "browser" ? (
-          <div className="min-h-0 flex-1 overflow-hidden bg-background">
+          <div className="min-h-0 flex-1 overflow-hidden bg-background pb-(--pane-safe-bottom)">
             <BrowserPanel
               active={active}
               agentId={agentId}

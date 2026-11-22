@@ -1212,7 +1212,7 @@ function IssueList({
       ) : null}
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto px-1 pb-2 transition-opacity [&>*:last-child_[data-row-separator]]:border-transparent",
+          "safe-scroll-end min-h-0 flex-1 overflow-y-auto px-1 pb-2 transition-opacity [&>*:last-child_[data-row-separator]]:border-transparent",
           stale && "opacity-50"
         )}
       >
@@ -1359,7 +1359,13 @@ function IssueDetail({
           </>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          // Without the comment form, it is at the bottom edge.
+          !issue && "safe-scroll-end"
+        )}
+      >
         {issueQuery.isPending && !issue ? (
           <GitSectionNote className="px-4 py-3">
             <Spinner /> Loading issue…
@@ -1463,7 +1469,7 @@ function IssueDetail({
       </div>
       {issue ? (
         <form
-          className="flex shrink-0 items-end gap-2 border-t border-border/60 bg-background px-3 py-2"
+          className="flex shrink-0 items-end gap-2 border-t border-border/60 bg-background px-3 pt-2 pb-safe-2"
           onSubmit={(event) => {
             event.preventDefault()
             sendComment()

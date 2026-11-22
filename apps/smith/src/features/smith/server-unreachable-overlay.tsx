@@ -20,7 +20,7 @@ export function ServerUnreachableOverlay() {
   return (
     <div
       role="alert"
-      className="fixed inset-0 z-[100] flex bg-background pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-0 z-[100] flex bg-background pt-[env(safe-area-inset-top)] pb-(--safe-bottom)"
     >
       <Empty>
         <EmptyHeader>

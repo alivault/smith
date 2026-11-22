@@ -284,6 +284,14 @@ const GIT_FILE_TREE_UNSAFE_CSS = `
     padding-inline: 0 16px;
   }
 
+  /* The end of the list: the container's bottom padding, and the home
+     indicator area of a phone (safe-scroll-end in styles.css). It must be
+     padding: the virtual list does not let the user scroll past its rows,
+     except into this padding (patches/@pierre__trees*.patch). */
+  [data-file-tree-virtualized-scroll='true'] {
+    padding-bottom: calc(0.5rem + var(--pane-safe-bottom, 0px));
+  }
+
   [data-file-tree-search-input] {
     font-size: 16px;
   }
@@ -651,7 +659,7 @@ export function ProjectFilesWorkspace({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden p-2">
+        <div className="min-h-0 flex-1 overflow-hidden px-2 pt-2">
           {!normalizedCwd ? (
             <GitSectionNote>No directory selected.</GitSectionNote>
           ) : !viewerContextId ? (
@@ -1024,13 +1032,13 @@ export function ProjectFileContent({
         ) : showImage && imageSrc ? (
           <ProjectFileImage src={imageSrc} path={path} onSize={setImageSize} />
         ) : showMarkdownPreview ? (
-          <div className="h-full overflow-auto p-4 text-foreground">
+          <div className="h-full overflow-auto px-4 pt-4 pb-safe-4 text-foreground">
             <MarkdownBlock text={content} />
           </div>
         ) : (
           <React.Suspense
             fallback={
-              <pre className="m-0 h-full overflow-auto p-4 font-mono text-[13px] leading-5 whitespace-pre-wrap text-foreground">
+              <pre className="m-0 h-full overflow-auto px-4 pt-4 pb-safe-4 font-mono text-[13px] leading-5 whitespace-pre-wrap text-foreground">
                 <code>{edit ? edit.draft : content}</code>
               </pre>
             }

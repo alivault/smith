@@ -157,7 +157,7 @@ export function AgentPanel({
       viewerContextId,
     }
     return (
-      <div className="h-full min-h-0 overflow-y-auto">
+      <div className="safe-scroll-end h-full min-h-0 overflow-y-auto">
         {[...sections.values()]
           .filter((section) => section.preview)
           .sort((left, right) => left.order - right.order)
@@ -216,7 +216,7 @@ export function AgentPanel({
     viewerContextId,
   }
   return (
-    <div className="h-full min-h-0 overflow-y-auto">
+    <div className="safe-scroll-end h-full min-h-0 overflow-y-auto">
       {visible.map((section) => (
         <AgentSectionView
           key={section.key}

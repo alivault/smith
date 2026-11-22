@@ -155,7 +155,7 @@ export function AppShellAgentContent({
     return (
       <div
         {...fileDrop.handlers}
-        className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] items-end justify-items-center overflow-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] md:place-items-center"
+        className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] items-end justify-items-center overflow-auto p-4 pb-[max(1rem,var(--safe-bottom))] md:place-items-center"
       >
         <AppShellComposerController
           actionsRef={actionsRef}

@@ -79,6 +79,9 @@
    * button needs no extra padding to put its icon on the grid.
    */
   :root {
+    /* The home indicator area of a phone. Read it through
+       --pane-safe-bottom (see safe-bottom-pane below). */
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
     --sidebar-gutter: 0.5rem;
     --sidebar-item-size: 2rem;
     --sidebar-icon: 1rem;
@@ -110,6 +113,45 @@
   html {
     @apply font-sans;
   }
+}
+
+/*
+ * The home indicator area of a phone (iOS behavior).
+ *
+ * A pane that reaches the bottom edge of the screen sets safe-bottom-pane.
+ * It does not pad itself: its lists scroll to the screen edge, under the
+ * home indicator. In the pane:
+ *   - a scroll container at the bottom gets safe-scroll-end: a spacer at the
+ *     end of its content, so its last row can scroll above the indicator;
+ *   - a bar that does not scroll at the bottom (a footer, a form) gets
+ *     pb-safe-N: its own bottom padding plus the inset.
+ * Outside such a pane, --pane-safe-bottom is not set, and both add nothing.
+ * safe-bottom-none stops it for a part that is not at the bottom.
+ */
+@utility safe-bottom-pane {
+  --pane-safe-bottom: var(--safe-bottom);
+}
+
+@utility safe-bottom-none {
+  --pane-safe-bottom: 0px;
+}
+
+/* A spacer, not padding: WebKit does not always add the end padding of a
+   flex or grid scroll container to its scroll area. */
+@utility safe-scroll-end {
+  &::after {
+    content: "";
+    display: block;
+    flex: none;
+    grid-column: 1 / -1;
+    height: var(--pane-safe-bottom, 0px);
+  }
+}
+
+@utility pb-safe-* {
+  padding-bottom: calc(
+    --spacing(--value(integer)) + var(--pane-safe-bottom, 0px)
+  );
 }
 
 .smith-terminal-panel .xterm {

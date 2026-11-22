@@ -449,7 +449,9 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+          {/* The lists scroll to the bottom edge, under the home indicator
+              (safe-bottom-pane in styles.css). */}
+          <div className="flex h-full w-full flex-col pt-[env(safe-area-inset-top)] safe-bottom-pane">
             {children}
           </div>
         </SheetContent>

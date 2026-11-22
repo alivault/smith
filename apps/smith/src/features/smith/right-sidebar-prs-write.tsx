@@ -426,7 +426,7 @@ export function PrFooter({
     const submitDisabled =
       reviewMutation.isPending || (chosen !== "APPROVE" && empty)
     return (
-      <div className="flex shrink-0 items-center gap-1.5 border-t border-border/60 bg-background px-3 py-2 text-xs">
+      <div className="flex shrink-0 items-center gap-1.5 border-t border-border/60 bg-background px-3 pt-2 pb-safe-2 text-xs">
         <span className="font-semibold">Review</span>
         <span className="min-w-0 truncate text-muted-foreground">
           {count === 0
@@ -554,7 +554,7 @@ export function PrFooter({
   }
   return (
     <form
-      className="shrink-0 border-t border-border/60 bg-background px-3 py-2"
+      className="shrink-0 border-t border-border/60 bg-background px-3 pt-2 pb-safe-2"
       onSubmit={(submit) => {
         submit.preventDefault()
         sendComment()

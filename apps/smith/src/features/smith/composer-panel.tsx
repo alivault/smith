@@ -497,11 +497,7 @@ export function ComposerPanel({
 
   if (flush) return content
 
-  return (
-    <div className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-      {content}
-    </div>
-  )
+  return <div className="px-4 pb-[max(1rem,var(--safe-bottom))]">{content}</div>
 }
 
 const ComposerAttachments = React.memo(function ComposerAttachments({

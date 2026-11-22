@@ -385,7 +385,9 @@ const smithEditorTheme = EditorView.theme({
     lineHeight: "1.25rem",
   },
   ".cm-content": {
-    padding: "1rem 0",
+    // The bottom adds the home indicator area of a phone (safe-scroll-end
+    // in styles.css).
+    padding: "1rem 0 calc(1rem + var(--pane-safe-bottom, 0px))",
     caretColor: "var(--foreground)",
   },
   ".cm-line": { padding: "0 1rem 0 0.5rem" },

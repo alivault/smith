@@ -773,17 +773,20 @@ function useAppShellTabsControllerView({
     currentTab === "conversation"
       ? "flex min-h-0 flex-1 flex-col"
       : "hidden min-h-0 flex-1 flex-col md:flex"
+  // The phone panes reach the bottom edge. Their lists scroll under the home
+  // indicator and pad their own end (safe-bottom-pane in styles.css). The
+  // terminal is not a list: it stays above the indicator.
   const mobileGitClassName =
     currentTab === "git"
-      ? "min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)] md:hidden"
+      ? "safe-bottom-pane min-h-0 flex-1 overflow-hidden md:hidden"
       : "hidden"
   const mobileAgentClassName =
     currentTab === "agent"
-      ? "min-h-0 flex-1 overflow-hidden bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+      ? "safe-bottom-pane min-h-0 flex-1 overflow-hidden bg-background md:hidden"
       : "hidden"
   const mobileTerminalClassName =
     currentTab === "terminal"
-      ? "min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)] md:hidden"
+      ? "min-h-0 flex-1 overflow-hidden pb-(--safe-bottom) md:hidden"
       : "hidden"
   const rightSidebarHasVisibleFiles = useSelector(
     rightSidebarStore,

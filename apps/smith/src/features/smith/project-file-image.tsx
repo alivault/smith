@@ -67,7 +67,7 @@ export function ProjectFileImage({
         "bg-[image:linear-gradient(45deg,color-mix(in_oklab,var(--muted)_60%,transparent)_25%,transparent_25%,transparent_75%,color-mix(in_oklab,var(--muted)_60%,transparent)_75%),linear-gradient(45deg,color-mix(in_oklab,var(--muted)_60%,transparent)_25%,transparent_25%,transparent_75%,color-mix(in_oklab,var(--muted)_60%,transparent)_75%)]"
       )}
     >
-      <div className="flex size-full items-center justify-center p-4">
+      <div className="flex size-full items-center justify-center px-4 pt-4 pb-safe-4">
         <button
           type="button"
           aria-label={`Open ${name} in a lightbox`}

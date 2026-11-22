@@ -767,6 +767,13 @@ function useFileReviewContentView({
     }
   }, [historyOpen, isMobile, normalizedCwd])
 
+  const showHistoryPanel = Boolean(
+    showEmbeddedHistory &&
+    normalizedCwd &&
+    viewerContextId &&
+    files !== null &&
+    !filesQuery.error
+  )
   const bulkActionPending = bulkGitActionMutation.isPending
   const bulkActionDisabled =
     bulkActionPending ||
@@ -901,10 +908,16 @@ function useFileReviewContentView({
           </ToggleGroup>
         </div>
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div
+        className={cn(
+          "relative min-h-0 flex-1",
+          // The history panel is below it, at the bottom edge.
+          showHistoryPanel && "safe-bottom-none"
+        )}
+      >
         <div
           ref={setChangesScrollElement}
-          className="h-full overflow-auto"
+          className="safe-scroll-end h-full overflow-auto"
           onScroll={(event) => {
             updateStickyReviewFileHeader(event.currentTarget)
             onChangesScrollGradientScroll(event)
@@ -973,14 +986,14 @@ function useFileReviewContentView({
           topHeight={changesScrollTopGradientHeight}
         />
       </div>
-      {showEmbeddedHistory &&
-      normalizedCwd &&
-      viewerContextId &&
-      files !== null &&
-      !filesQuery.error ? (
+      {showHistoryPanel ? (
         <div
           ref={historyPanelRef}
-          className="relative flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border/70 bg-card/50 md:max-h-none"
+          className={cn(
+            "relative flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-hidden border-t border-border/70 bg-card/50 md:max-h-none",
+            // Closed, its header is the bar at the bottom edge.
+            !historyOpen && "pb-safe-0"
+          )}
           style={
             !isMobile && historyOpen
               ? { height: historyPanelHeight ?? defaultHistoryPanelHeight }
@@ -1046,7 +1059,7 @@ function useFileReviewContentView({
           {historyOpen ? (
             <div
               ref={historyScrollRef}
-              className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/70"
+              className="safe-scroll-end min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/70"
               onScroll={(event) => {
                 updateHistoryHeaderShadow(event.currentTarget)
               }}

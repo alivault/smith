@@ -53,7 +53,11 @@ export function WindowSidebar({ shownMachineId }: { shownMachineId: string }) {
       className="border-r border-sidebar-border/70 pt-[env(safe-area-inset-top)]"
     >
       {/* In the split layout, its two parts scroll, not the whole sidebar. */}
-      <SidebarContent className={split ? "overflow-hidden" : undefined}>
+      {/* The bottom slot (Archived agents) is the end of the list, or a
+          footer below the two parts in the split layout. */}
+      <SidebarContent
+        className={split ? "overflow-hidden pb-safe-0" : "safe-scroll-end"}
+      >
         {/* Search covers all machines, so it stays above their groups. */}
         <div
           key={`top:${shownMachineId}`}

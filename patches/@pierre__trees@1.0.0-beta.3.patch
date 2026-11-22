@@ -1,0 +1,36 @@
+diff --git a/dist/render/FileTreeView.js b/dist/render/FileTreeView.js
+index 50a32001d7a7d3612b7f1929ccb11b3f1cbffd4f..a2c96a9fe7355c466d7ffa133df7681a05c79b94 100644
+--- a/dist/render/FileTreeView.js
++++ b/dist/render/FileTreeView.js
+@@ -241,11 +241,19 @@ function isSpaceSelectionKey(event) {
+ function isSearchOpenSeedKey(event) {
+ 	return event.key.length === 1 && /^[\p{L}\p{N}]$/u.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey;
+ }
++// Smith patch: the bottom padding of the scroll element is space after the
++// last row (for example the home indicator area of a phone), not viewport.
++function readScrollEndPadding(scrollElement) {
++	const padding = Number.parseFloat(getComputedStyle(scrollElement).paddingBottom);
++	return Number.isFinite(padding) && padding > 0 ? padding : 0;
++}
+ function readMeasuredViewportHeight(scrollElement, fallbackViewportHeight) {
+ 	if (scrollElement == null) return fallbackViewportHeight;
+-	const rectHeight = scrollElement.getBoundingClientRect().height;
++	const endPadding = readScrollEndPadding(scrollElement);
++	const rectHeight = scrollElement.getBoundingClientRect().height - endPadding;
+ 	if (rectHeight > 0) return rectHeight;
+-	return scrollElement.clientHeight > 0 ? scrollElement.clientHeight : fallbackViewportHeight;
++	const clientHeight = scrollElement.clientHeight - endPadding;
++	return clientHeight > 0 ? clientHeight : fallbackViewportHeight;
+ }
+ function getCachedViewportHeight(cachedViewportHeight, fallbackViewportHeight) {
+ 	return cachedViewportHeight != null && cachedViewportHeight > 0 ? cachedViewportHeight : fallbackViewportHeight;
+@@ -253,7 +261,8 @@ function getCachedViewportHeight(cachedViewportHeight, fallbackViewportHeight) {
+ function getResizeObserverViewportHeight(entry) {
+ 	const borderBoxSize = entry.borderBoxSize;
+ 	const firstBorderBoxSize = Array.isArray(borderBoxSize) ? borderBoxSize[0] : borderBoxSize;
+-	if (firstBorderBoxSize != null && Number.isFinite(firstBorderBoxSize.blockSize) && firstBorderBoxSize.blockSize > 0) return firstBorderBoxSize.blockSize;
++	const endPadding = readScrollEndPadding(entry.target);
++	if (firstBorderBoxSize != null && Number.isFinite(firstBorderBoxSize.blockSize) && firstBorderBoxSize.blockSize - endPadding > 0) return firstBorderBoxSize.blockSize - endPadding;
+ 	return entry.contentRect.height > 0 ? entry.contentRect.height : null;
+ }
+ function scrollFocusedRowIntoView(scrollElement, focusedIndex, itemHeight, viewportHeight, topInset = 0) {

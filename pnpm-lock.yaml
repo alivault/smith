@@ -16,6 +16,11 @@ overrides:
   encoding-sniffer: 1.0.2
   node-domexception: link:./vendor/node-domexception
 
+patchedDependencies:
+  '@pierre/trees@1.0.0-beta.3':
+    hash: 55c18e217c156a1576b80a95ad3f60f49a3f02e02deecebbef0f6c9b75cf95c0
+    path: patches/@pierre__trees@1.0.0-beta.3.patch
+
 importers:
 
   .:
@@ -122,7 +127,7 @@ importers:
         version: 1.1.20(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@pierre/trees':
         specifier: 1.0.0-beta.3
-        version: 1.0.0-beta.3(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+        version: 1.0.0-beta.3(patch_hash=55c18e217c156a1576b80a95ad3f60f49a3f02e02deecebbef0f6c9b75cf95c0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@rolldown/plugin-babel':
         specifier: ^0.2.3
         version: 0.2.3(@babel/core@7.29.0)(@babel/runtime@8.0.7)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@22.19.17)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0))(rolldown@1.0.0-rc.16)
@@ -7941,7 +7946,7 @@ snapshots:
 
   '@pierre/theme@0.0.28': {}
 
-  '@pierre/trees@1.0.0-beta.3(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
+  '@pierre/trees@1.0.0-beta.3(patch_hash=55c18e217c156a1576b80a95ad3f60f49a3f02e02deecebbef0f6c9b75cf95c0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:
       preact: 11.0.0-beta.0
       preact-render-to-string: 6.6.5(preact@11.0.0-beta.0)

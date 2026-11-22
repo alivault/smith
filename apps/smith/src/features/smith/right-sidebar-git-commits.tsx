@@ -2102,8 +2102,8 @@ export function GitCommitsSection({
             />
           ) : null}
         </div>
-        <div className="grid min-h-0 min-w-0 flex-1 gap-2 overflow-x-hidden overflow-y-auto">
-          {content}
+        <div className="safe-scroll-end min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <div className="grid min-w-0 gap-2">{content}</div>
         </div>
       </section>
     )
