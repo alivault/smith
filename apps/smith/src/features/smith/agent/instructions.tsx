@@ -123,6 +123,8 @@ function describe(section: PromptSection) {
       return "Instructions for this agent from its profile or parent"
     case "codemode":
       return "Tools that scripts can call"
+    case "deferred_tools":
+      return "Tools that load when the agent needs them"
     case "todo":
       return "The open items of the agent's todo list"
     case "project_jobs":
@@ -497,7 +499,7 @@ function ToolsDialog({
   tokens: PromptTokens
   onOpenChange: (open: boolean) => void
 }) {
-  const { items, overhead } = tokens.tools
+  const { items, overhead, deferred = [] } = tokens.tools
   const ranked = rankTools(items)
   const shownOverhead = overhead && overhead.tokens > 0 ? overhead : undefined
   const rows = [
@@ -516,10 +518,16 @@ function ToolsDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Tools ({items.length})</DialogTitle>
+          <DialogTitle>
+            Tools ({items.length}
+            {deferred.length > 0 ? `, ${deferred.length} deferred` : ""})
+          </DialogTitle>
           <DialogDescription>
             The name, description, and input schema of each tool, largest first.
             Each request sends them.
+            {deferred.length > 0
+              ? " Deferred tools are sent only after the agent loads them; until then the deferred tools section lists them."
+              : ""}
           </DialogDescription>
         </DialogHeader>
         <ShareBar
@@ -556,6 +564,23 @@ function ToolsDialog({
               </span>
             </li>
           ))}
+          {deferred.map((name) => (
+            <li
+              key={`deferred:${name}`}
+              className="flex h-7 min-w-0 items-center gap-2 px-1.5 text-sm"
+            >
+              <span
+                aria-hidden="true"
+                className="size-2 shrink-0 rounded-full border border-muted-foreground/50"
+              />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                {name}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                deferred
+              </span>
+            </li>
+          ))}
         </ul>
       </DialogContent>
     </Dialog>
@@ -565,8 +590,9 @@ function ToolsDialog({
 /** The tools group: the tool definitions and the overhead of tool use. */
 function ToolsGroup({ tokens }: { tokens: PromptTokens }) {
   const [open, setOpen] = React.useState(false)
-  const { items, overhead, total } = tokens.tools
+  const { items, overhead, total, deferred = [] } = tokens.tools
   if (items.length === 0) return null
+  const count = `${items.length}${deferred.length > 0 ? `, ${deferred.length} deferred` : ""}`
   const shownOverhead = overhead && overhead.tokens > 0 ? overhead : undefined
   const listed = shownOverhead
     ? { tokens: total.tokens - shownOverhead.tokens, exact: total.exact }
@@ -577,7 +603,7 @@ function ToolsGroup({ tokens }: { tokens: PromptTokens }) {
       <ul>
         <Row
           color={TOOLS_COLOR}
-          name={`Tools (${items.length})`}
+          name={`Tools (${count})`}
           count={listed}
           label={`Show the ${items.length} tools`}
           onClick={() => setOpen(true)}

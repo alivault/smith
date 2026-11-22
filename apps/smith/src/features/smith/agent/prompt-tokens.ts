@@ -14,6 +14,11 @@ export type PromptTokens = {
     total: TokenCount
     overhead?: TokenCount
     items: Array<{ name: string } & TokenCount>
+    /**
+     * Deferred tools that are not loaded: requests do not send them. The
+     * `deferred_tools` section lists them, one line each.
+     */
+    deferred?: string[]
   }
   total: TokenCount
 }

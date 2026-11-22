@@ -2,7 +2,8 @@
  * The `smith` extension: the system prompt, built the way the Pi coding agent
  * builds it: a preamble, rules, project context (AGENTS.md), skills, and the
  * working directory. Each part is a durable prompt section, so only parts that
- * change are sent again.
+ * change are sent again. It also has the `load_tools` tool and the
+ * `deferred_tools` section of deferred tools (see `deferred.ts`).
  */
 import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent"
 import {
@@ -12,6 +13,7 @@ import {
 } from "@earendil-works/pi-durable"
 
 import type { ResourceCache } from "../core/resources.ts"
+import { deferredParts } from "./deferred.ts"
 
 const DEFAULT_PREAMBLE =
   "You are an expert coding assistant operating inside Smith, a coding agent harness built on pi. You help users by reading files, executing commands, editing code, and writing new files."
@@ -36,8 +38,11 @@ const TOOL_GUIDELINES: Record<string, string[]> = {
   ],
 }
 
+/** The agent's tools, also the deferred ones that are not loaded yet. */
 function toolNames(input: PromptInput) {
-  return input.agent.tools.map((tool) => tool.name)
+  return [...input.agent.tools, ...input.agent.deferred].map(
+    (tool) => tool.name
+  )
 }
 
 function cwdOf(input: PromptInput) {
@@ -62,6 +67,8 @@ function rules(names: readonly string[]) {
 export function createPromptExtension(resources: ResourceCache) {
   return defineExtension({
     name: "smith",
+    tools: deferredParts.tools,
+    hooks: deferredParts.hooks,
     sections: [
       section(
         "preamble",
@@ -71,6 +78,7 @@ export function createPromptExtension(resources: ResourceCache) {
         { tag: false }
       ),
       section("rules", (input) => rules(toolNames(input))),
+      ...deferredParts.sections,
       section("addendum", async (input) => {
         const append = (await resources.get(cwdOf(input))).appendSystemPrompt
         return append.length > 0 ? append.join("\n\n") : undefined

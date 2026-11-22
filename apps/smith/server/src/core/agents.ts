@@ -60,6 +60,7 @@ import type {
   HostAgentSummary,
 } from "../extensions/host.ts"
 import { updateTodo, type TodoChange } from "../extensions/todo.ts"
+import { loadUsedDeferredTools } from "../extensions/deferred.ts"
 import { JobsDoc, jobNeedingUser, type JobsState } from "../extensions/jobs.ts"
 import {
   cancelConversationTimers,
@@ -500,6 +501,8 @@ export class Agents implements HostAgents {
   readonly #needsInput = new Set<string>()
   /** Agents with an open `ask_user` question. */
   readonly #questionWaits = new Set<string>()
+  /** Agents whose used deferred tools were loaded in this process. */
+  readonly #usedToolsLoaded = new Set<string>()
   /** Agents with a job that needs the user (see `jobNeedingUser`). */
   readonly #jobWaits = new Map<
     string,
@@ -2018,6 +2021,22 @@ export class Agents implements HostAgents {
     return true
   }
 
+  /**
+   * Load the deferred tools that an agent from before deferred tools used,
+   * so they stay offered (see `extensions/deferred.ts`). One check for each
+   * agent in this process; a used tool is loaded, so later checks find
+   * nothing.
+   */
+  async #loadUsedTools(id: string, conversation: Conversation) {
+    if (this.#usedToolsLoaded.has(id)) return
+    this.#usedToolsLoaded.add(id)
+    try {
+      await loadUsedDeferredTools(conversation, ctx)
+    } catch (error) {
+      console.warn("[smith] could not load the used deferred tools:", error)
+    }
+  }
+
   async prompt(
     id: string,
     input: {
@@ -2069,6 +2088,7 @@ export class Agents implements HostAgents {
     // A new queued prompt resumes a paused queue, ahead of the new prompt.
     if (this.isBusy(id) && (await this.#heldItems(id)).length > 0)
       await this.requeue(id)
+    await this.#loadUsedTools(id, conversation)
     const submission = await conversation.submit(
       {
         type: "input",
@@ -2287,6 +2307,7 @@ export class Agents implements HostAgents {
       return
     }
     const conversation = await this.conversation(target)
+    await this.#loadUsedTools(target, conversation)
     const submission = await conversation.submit(
       {
         type: "input",

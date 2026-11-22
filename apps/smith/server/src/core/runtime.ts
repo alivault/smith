@@ -36,6 +36,7 @@ import {
 import { createMcpExtension, type McpExtension } from "../extensions/mcp.ts"
 import { createPromptExtension } from "../extensions/prompt.ts"
 import { createWebAccessExtension } from "../extensions/web-access.ts"
+import { deferTools } from "../extensions/deferred.ts"
 import { createSmithCodingTools } from "./coding-tools.ts"
 import { executionEnv } from "./env.ts"
 import { compactionSettings, modelCompactionPolicy } from "./compaction.ts"
@@ -119,26 +120,33 @@ export async function openRuntime(
   // The prompt extension comes before the extensions with prompt sections,
   // so the preamble starts the system prompt.
   registry.install(createPromptExtension(resources))
-  registry.install(createWebAccessExtension())
+  registry.install(deferTools(createWebAccessExtension()))
   const mcp = createMcpExtension(agentDir, paths.dataDir)
   registry.install(mcp.extension)
   registry.install(
-    createCodemodeExtension({
-      sandbox: new CodemodeSandbox({ memoryLimitBytes: 256 * 1024 * 1024 }),
-      namespaces: mcp.namespaces(),
-      inlineBudget: CODEMODE_INLINE_BUDGET,
-    })
-  )
-  const smith = createSmithExtensions({ host, dataDir: paths.dataDir })
-  for (const extension of smith.extensions) registry.install(extension)
-  mcp.onChange(() => {
-    registry.install(mcp.extension)
-    registry.install(
+    deferTools(
       createCodemodeExtension({
         sandbox: new CodemodeSandbox({ memoryLimitBytes: 256 * 1024 * 1024 }),
         namespaces: mcp.namespaces(),
         inlineBudget: CODEMODE_INLINE_BUDGET,
       })
+    )
+  )
+  const smith = createSmithExtensions({ host, dataDir: paths.dataDir })
+  for (const extension of smith.extensions)
+    registry.install(deferTools(extension))
+  mcp.onChange(() => {
+    registry.install(mcp.extension)
+    registry.install(
+      deferTools(
+        createCodemodeExtension({
+          sandbox: new CodemodeSandbox({
+            memoryLimitBytes: 256 * 1024 * 1024,
+          }),
+          namespaces: mcp.namespaces(),
+          inlineBudget: CODEMODE_INLINE_BUDGET,
+        })
+      )
     )
   })
 

@@ -66,6 +66,8 @@ export type SystemPrompt = {
   text: string
   /** The tool definitions that the model request offers with the prompt. */
   tools: Tool[]
+  /** Deferred tools that are not loaded: the request does not offer them. */
+  deferred: string[]
 }
 
 const TITLES: Record<string, string> = {
@@ -249,6 +251,7 @@ export async function systemPromptOf(options: {
       }),
       text: replayed.text,
       tools: getCurrentTools(options.messages),
+      deferred: agent.deferred.map((tool) => tool.name),
     }
   }
   const rendered = await renderSections(
@@ -273,5 +276,6 @@ export async function systemPromptOf(options: {
       timestamp: 0,
     }),
     tools: agent.tools.map(toToolDeclaration),
+    deferred: agent.deferred.map((tool) => tool.name),
   }
 }

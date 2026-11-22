@@ -37,6 +37,8 @@ export type Profile = {
   instructions?: string
   /** `sandbox`: bash runs with a read-only filesystem and no network. */
   bash?: "sandbox"
+  /** Deferred tools to load at once, for example `web_search`. */
+  loadTools?: string[]
 }
 
 /** The tool limits of one agent, kept in its metadata. */
@@ -102,6 +104,7 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
       "watch",
     ],
     removeTools: ["write", "edit", "bash", "browser.eval", "watch.command"],
+    loadTools: ["web_search", "fetch_content"],
     instructions:
       "You are a researcher: find and read sources, then report with links. Do not change files.",
   },
@@ -310,13 +313,31 @@ function subagentInstructions(
  * A subagent always keeps the subagent limits.
  */
 export async function applyProfile(
-  conversation: Pick<Conversation, "configure">,
+  conversation: Pick<Conversation, "configure" | "agent">,
   registry: RegistryReader,
   profile: Profile | undefined,
   context: Context,
   options: SelectionOptions = {}
 ) {
   const selection = resolveSelection(registry, profile, options)
+  const load = nameList(profile?.loadTools)
+  // The deferred tools that the profile loads, and the loaded ones stay.
+  let modelTools: { add: ToolRegistration[] } | undefined
+  if (load) {
+    const loaded = (await conversation.agent(context)).tools
+      .filter((tool) => tool.deferred === true)
+      .map((tool) => tool.name)
+    const snapshot = registry.snapshot()
+    const byName = new Map(
+      snapshot.tools().map(({ tool }) => [tool.name, tool] as const)
+    )
+    modelTools = {
+      add: [...new Set([...loaded, ...load])].flatMap((name) => {
+        const tool = byName.get(name)
+        return tool ? [tool] : []
+      }),
+    }
+  }
   await conversation.configure(
     {
       extensions: selection.extensions,
@@ -325,6 +346,7 @@ export async function applyProfile(
           ? { remove: selection.removeTools }
           : null,
       instructions: selection.instructions,
+      ...(modelTools ? { modelTools } : {}),
     },
     context
   )

@@ -53,6 +53,11 @@ export type PromptTokens = {
     /** Tokens that the tools add beyond their definitions. */
     overhead?: TokenCount
     items: Array<{ name: string } & TokenCount>
+    /**
+     * Deferred tools that are not loaded: the request does not send their
+     * definitions; the `deferred_tools` section lists them.
+     */
+    deferred?: string[]
   }
   total: TokenCount
 }
@@ -64,6 +69,8 @@ export type TokenInput = {
   text: string
   /** The tools that the request offers. */
   tools: readonly Tool[]
+  /** Deferred tools that the request does not offer yet. */
+  deferred?: readonly string[]
 }
 
 type Auth = {
@@ -174,7 +181,11 @@ export function estimateTokens(input: TokenInput): PromptTokens {
     ...(cacheRead !== undefined ? { cacheRead } : {}),
     parts,
     prompt,
-    tools: { total: tools, items },
+    tools: {
+      total: tools,
+      items,
+      ...(input.deferred?.length ? { deferred: [...input.deferred] } : {}),
+    },
     total: sum([prompt, tools]),
   }
 }
@@ -428,6 +439,9 @@ export class PromptTokenCounter {
     const tools: PromptTokens["tools"] = {
       total,
       items,
+      ...(estimated.tools.deferred
+        ? { deferred: estimated.tools.deferred }
+        : {}),
       ...(total.exact && listed.exact && items.length > 0
         ? {
             overhead: {
