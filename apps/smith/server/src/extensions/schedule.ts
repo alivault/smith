@@ -19,6 +19,7 @@ import {
   defineTool,
 } from "@earendil-works/pi-durable"
 
+import { StringEnum } from "../core/schema.ts"
 import type { HostBridge } from "./host.ts"
 import {
   cancelTimer,
@@ -215,13 +216,7 @@ export function createScheduleExtension(host: HostBridge) {
       "Until a timer fires, you show as waiting, not done, so end your turn after you set it.",
     ].join(" "),
     parameters: Type.Object({
-      action: Type.Optional(
-        Type.Union([
-          Type.Literal("create"),
-          Type.Literal("list"),
-          Type.Literal("cancel"),
-        ])
-      ),
+      action: Type.Optional(StringEnum(["create", "list", "cancel"])),
       message: Type.Optional(
         Type.String({ description: "create: what you get when it fires" })
       ),

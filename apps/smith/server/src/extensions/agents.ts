@@ -55,6 +55,7 @@ import {
 } from "../core/agent-search.ts"
 import { bashCalls, commandLine, formatDuration } from "../core/bash-calls.ts"
 import type { QueuedItem } from "../core/queue.ts"
+import { StringEnum } from "../core/schema.ts"
 import { createWorktree, discardWorktree } from "../services/worktree.ts"
 import {
   conversationOf,
@@ -2284,7 +2285,7 @@ export function createAgentsExtension(host: HostBridge) {
       "An answer that you got from wait or read does not come to you again as a message.",
     ].join(" "),
     parameters: Type.Object({
-      action: Type.Union(AGENT_ACTIONS.map((name) => Type.Literal(name))),
+      action: StringEnum(AGENT_ACTIONS),
       id: Type.Optional(Type.String()),
       ids: Type.Optional(
         Type.Array(
@@ -2294,12 +2295,7 @@ export function createAgentsExtension(host: HostBridge) {
         )
       ),
       scope: Type.Optional(
-        Type.Union([
-          Type.Literal("subagents"),
-          Type.Literal("project"),
-          Type.Literal("all"),
-          Type.Literal("archived"),
-        ])
+        StringEnum(["subagents", "project", "all", "archived"])
       ),
       last: Type.Optional(Type.Number()),
       include_tools: Type.Optional(Type.Boolean()),
@@ -2323,9 +2319,7 @@ export function createAgentsExtension(host: HostBridge) {
       ),
       any: Type.Optional(Type.Boolean()),
       message: Type.Optional(Type.String({ description: "send: the text" })),
-      mode: Type.Optional(
-        Type.Union([Type.Literal("followUp"), Type.Literal("steer")])
-      ),
+      mode: Type.Optional(StringEnum(["followUp", "steer"])),
       wait: Type.Optional(
         Type.Boolean({ description: "send: wait for the answer" })
       ),

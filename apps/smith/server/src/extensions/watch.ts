@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-durable"
 
 import { subagentCommandRefusal } from "../core/coding-tools.ts"
+import { StringEnum } from "../core/schema.ts"
 import type { HostBridge } from "./host.ts"
 import {
   cancelTimer,
@@ -443,21 +444,8 @@ export function createWatchExtension(host: HostBridge) {
       "Until a watch fires, you show as waiting, not done.",
     ].join(" "),
     parameters: Type.Object({
-      action: Type.Optional(
-        Type.Union([
-          Type.Literal("create"),
-          Type.Literal("list"),
-          Type.Literal("cancel"),
-        ])
-      ),
-      kind: Type.Optional(
-        Type.Union([
-          Type.Literal("command"),
-          Type.Literal("url"),
-          Type.Literal("file"),
-          Type.Literal("pr_checks"),
-        ])
-      ),
+      action: Type.Optional(StringEnum(["create", "list", "cancel"])),
+      kind: Type.Optional(StringEnum(["command", "url", "file", "pr_checks"])),
       message: Type.Optional(
         Type.String({ description: "create: what you get when it fires" })
       ),

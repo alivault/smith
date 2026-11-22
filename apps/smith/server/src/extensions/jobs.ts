@@ -33,6 +33,7 @@ import {
 } from "@earendil-works/pi-durable"
 
 import { subagentCommandRefusal } from "../core/coding-tools.ts"
+import { StringEnum } from "../core/schema.ts"
 import {
   deleteJobLog,
   jobLogParts,
@@ -1716,20 +1717,18 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
       "send_text and send_keys refuse when the terminal hides input: a secret is for the user. You can read the user's terminals, but not type in them.",
     ].join(" "),
     parameters: Type.Object({
-      action: Type.Union(
-        [
-          "list",
-          "output",
-          "stop",
-          "open",
-          "read",
-          "wait",
-          "send_text",
-          "send_keys",
-          "focus",
-          "close",
-        ].map((name) => Type.Literal(name))
-      ),
+      action: StringEnum([
+        "list",
+        "output",
+        "stop",
+        "open",
+        "read",
+        "wait",
+        "send_text",
+        "send_keys",
+        "focus",
+        "close",
+      ]),
       id: Type.Optional(
         Type.String({ description: "A job ID, or a user terminal ID (u-…)" })
       ),
@@ -1738,9 +1737,7 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
         Type.String({ description: "open: the command (default: a shell)" })
       ),
       cwd: Type.Optional(Type.String()),
-      source: Type.Optional(
-        Type.Union([Type.Literal("visible"), Type.Literal("recent")])
-      ),
+      source: Type.Optional(StringEnum(["visible", "recent"])),
       lines: Type.Optional(
         Type.Number({ description: "read recent: lines (default 60)" })
       ),

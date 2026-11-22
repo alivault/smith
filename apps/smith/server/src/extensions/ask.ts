@@ -28,6 +28,7 @@ import {
   type ToolExecutionApi,
 } from "@earendil-works/pi-durable"
 
+import { StringEnum } from "../core/schema.ts"
 import { json, registerState, textResult } from "./util.ts"
 
 export type QuestionOption = { label: string; description?: string }
@@ -237,11 +238,7 @@ const fieldSchema = Type.Object({
   name: Type.String(),
   label: Type.Optional(Type.String()),
   type: Type.Optional(
-    Type.Union(
-      (["text", "textarea", "number", "boolean", "select"] as const).map(
-        (kind) => Type.Literal(kind)
-      )
-    )
+    StringEnum(["text", "textarea", "number", "boolean", "select"])
   ),
   options: Type.Optional(Type.Array(Type.String())),
   required: Type.Optional(Type.Boolean()),
@@ -258,11 +255,7 @@ const askTool = defineTool({
   parameters: Type.Object({
     question: Type.String({ description: "The question, in markdown" }),
     kind: Type.Optional(
-      Type.Union(
-        (["choice", "multi", "text", "form", "confirm"] as const).map((kind) =>
-          Type.Literal(kind)
-        )
-      )
+      StringEnum(["choice", "multi", "text", "form", "confirm"])
     ),
     options: Type.Optional(Type.Array(optionSchema)),
     allow_other: Type.Optional(

@@ -14,9 +14,12 @@ import {
   type Extension,
   type ToolRegistration,
 } from "@earendil-works/pi-durable"
+import { getAllowedSearchProviders } from "pi-web-access/gemini-search.ts"
 import { MCP_TOOL_DEFINITIONS } from "pi-web-access/mcp-tool-definitions.ts"
 import { createStandaloneWebToolCore } from "pi-web-access/web-tool-core.ts"
 import type { WebToolResult } from "pi-web-access/web-tool-contract.ts"
+
+import { StringEnum } from "../core/schema.ts"
 
 type Definition = (typeof MCP_TOOL_DEFINITIONS)[number]
 
@@ -85,6 +88,53 @@ function webTool(
 }
 
 /**
+ * The search providers that `provider` may name: the allowed ones of
+ * `~/.pi/web-search.json` (`webSearch.allowedProviders`), else all. Kimi
+ * signs in only through Pi, so it is left out, as in pi-web-access's MCP
+ * server. Which providers have credentials is known only when a search runs
+ * (some checks read browser cookies), so a provider without them returns an
+ * error then.
+ */
+export function searchProviders(): string[] {
+  let allowed: readonly string[]
+  try {
+    allowed = getAllowedSearchProviders()
+  } catch {
+    allowed = []
+  }
+  return allowed.filter((provider) => provider !== "kimi")
+}
+
+/**
+ * `web_search` with a compact `provider`: one enum, not pi-web-access's
+ * union of a single provider and a list of providers, which lists each
+ * provider twice. A list of providers is rarely needed; `all` searches
+ * every provider that has credentials.
+ */
+function searchTool(search: Definition) {
+  const schema = search.inputSchema as unknown as Schema & {
+    additionalProperties?: boolean
+  }
+  const { provider: _provider, ...rest } = schema.properties
+  const properties: Record<string, TSchema> = {}
+  for (const [name, property] of Object.entries(rest))
+    properties[name] = Type.Optional(property)
+  properties.provider = Type.Optional(
+    StringEnum(["auto", "all", ...searchProviders()], {
+      description:
+        "Search provider. Default auto: the configured one. all: every provider with credentials.",
+    })
+  )
+  return webTool(
+    search,
+    (args, signal) => core().webSearch(args as never, signal),
+    {
+      parameters: Type.Object(properties, { additionalProperties: false }),
+    }
+  )
+}
+
+/**
  * `fetch_content` that also reads stored content: with `responseId` it does
  * what pi-web-access's `get_search_content` does, so the model has one tool
  * for both.
@@ -150,13 +200,7 @@ export function createWebAccessExtension(): Extension {
   return defineExtension({
     name: "web-access",
     tools: [
-      ...(search
-        ? [
-            webTool(search, (args, signal) =>
-              core().webSearch(args as never, signal)
-            ),
-          ]
-        : []),
+      ...(search ? [searchTool(search)] : []),
       ...(fetch ? [fetchTool(fetch, get)] : []),
     ],
   })

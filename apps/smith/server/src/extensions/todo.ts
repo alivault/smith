@@ -16,6 +16,7 @@ import {
   type Harness,
 } from "@earendil-works/pi-durable"
 
+import { StringEnum } from "../core/schema.ts"
 import { json, registerState, textResult } from "./util.ts"
 
 export type TodoStatus = "pending" | "active" | "done" | "blocked"
@@ -181,9 +182,7 @@ const NOTE_DESCRIPTION =
 
 const itemSchema = Type.Object({
   text: Type.String({ description: TEXT_DESCRIPTION }),
-  status: Type.Optional(
-    Type.Union(STATUSES.map((status) => Type.Literal(status)))
-  ),
+  status: Type.Optional(StringEnum(STATUSES)),
   note: Type.Optional(Type.String({ description: NOTE_DESCRIPTION })),
 })
 
@@ -196,21 +195,13 @@ const todoTool = defineTool({
     "Mark one item active while you work on it, and done when it is finished. Use it for tasks with 3 or more steps.",
   ].join(" "),
   parameters: Type.Object({
-    op: Type.Union(
-      ["set", "add", "update", "remove", "clear", "list"].map((op) =>
-        Type.Literal(op)
-      )
-    ),
+    op: StringEnum(["set", "add", "update", "remove", "clear", "list"]),
     items: Type.Optional(Type.Array(itemSchema)),
     id: Type.Optional(Type.String()),
-    status: Type.Optional(
-      Type.Union(STATUSES.map((status) => Type.Literal(status)))
-    ),
+    status: Type.Optional(StringEnum(STATUSES)),
     text: Type.Optional(Type.String({ description: TEXT_DESCRIPTION })),
     note: Type.Optional(Type.String({ description: NOTE_DESCRIPTION })),
-    scope: Type.Optional(
-      Type.Union([Type.Literal("done"), Type.Literal("all")])
-    ),
+    scope: Type.Optional(StringEnum(["done", "all"])),
   }),
   replay: "safe",
   async execute(args, api, context) {

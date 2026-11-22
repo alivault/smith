@@ -26,6 +26,7 @@ import {
   type BrowserManager,
   type BrowserTab,
 } from "../services/browser.ts"
+import { StringEnum } from "../core/schema.ts"
 import { askAndWait } from "./ask.ts"
 import { agentIdOf, type HostBridge } from "./host.ts"
 import { announcePreview, findLocalUrls } from "../services/dev-server-url.ts"
@@ -457,9 +458,7 @@ export function createBrowserExtension(host: HostBridge) {
       "close (close the browser; cookies stay saved).",
     ].join(" "),
     parameters: Type.Object({
-      action: Type.Union(
-        Object.keys(ACTIONS).map((name) => Type.Literal(name))
-      ),
+      action: StringEnum(Object.keys(ACTIONS)),
       url: Type.Optional(Type.String()),
       new_tab: Type.Optional(Type.Boolean()),
       ref: Type.Optional(Type.Number()),
