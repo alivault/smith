@@ -786,11 +786,11 @@ export function ContextUsageRings({
   )
 }
 
-/** The short label of a usage ring. */
-function contextUsageBarLabel(ring: ContextUsageRing) {
-  if (ring.key === "context") return "Context"
+/** The label of a usage bar: a word, or one letter on a narrow row. */
+function contextUsageBarLabel(ring: ContextUsageRing, short: boolean) {
+  if (ring.key === "context") return short ? "C" : "Context"
   if (ring.key === "five-hour") return "5h"
-  return "Week"
+  return short ? "W" : "Week"
 }
 
 /**
@@ -807,7 +807,7 @@ export function ContextUsageBars({
   view: ContextUsageView
   className?: string
   ref?: Ref<HTMLSpanElement>
-  /** False on a narrow row: only each bar and its percent. */
+  /** False on a narrow row: one letter for each bar (C, 5h, W). */
   labels?: boolean
 }) {
   return (
@@ -819,11 +819,9 @@ export function ContextUsageBars({
     >
       {view.rings.map((ring) => (
         <span key={ring.key} className="flex items-center gap-1.5">
-          {labels ? (
-            <span className="text-muted-foreground">
-              {contextUsageBarLabel(ring)}
-            </span>
-          ) : null}
+          <span className="text-muted-foreground">
+            {contextUsageBarLabel(ring, !labels)}
+          </span>
           <span className="relative h-1 w-10 overflow-hidden rounded-full bg-foreground/15">
             {ring.percent == null ? null : (
               <span

@@ -183,7 +183,7 @@ export const ComposerContextUsage = React.memo(function ComposerContextUsage({
             : `${view.displayPercent} of the context used`
         }
         // The labeled bars say the same, so the tooltip shows only for the
-        // merged rings and for bars without labels.
+        // merged rings and for the bars with one-letter labels.
         openWhen={() => fit !== "labeled"}
       >
         <DropdownMenuTrigger
@@ -242,7 +242,7 @@ const MEASURE_ONLY = "invisible absolute top-0 left-0 flex"
 
 /**
  * How the usage fits in the row of the composer controls: bars
- * with labels, bars without labels, or merged rings. It compares the
+ * with word labels, bars with one-letter labels, or merged rings. It compares the
  * row width less the other controls with the natural widths of the two
  * bar forms (plus the trigger padding).
  */
