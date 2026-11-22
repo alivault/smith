@@ -716,14 +716,14 @@ function useAppShellTabsControllerView({
   gitPanelOpen,
   header,
   terminalPanelOpen,
-  isLoadingOlderHistory,
+  historyLoad,
   isAgentViewLoading,
   isSubmitting,
   isMobile,
   newAgentProjectOptions,
   onCancelCompaction,
   onCreateAgent,
-  onLoadOlderHistory,
+  onLoadHistory,
   onOpenAddProjectDialog,
   onCloseAllFileViewTabs,
   onCloseFileViewTab,
@@ -928,13 +928,13 @@ function useAppShellTabsControllerView({
           defaultNewAgentProject={defaultNewAgentProject}
           displaySettingsStore={displaySettingsStore}
           fileInputRef={fileInputRef}
-          isLoadingOlderHistory={isLoadingOlderHistory}
+          historyLoad={historyLoad}
           isAgentViewLoading={isAgentViewLoading}
           isSubmitting={isSubmitting}
           newAgentProjectOptions={newAgentProjectOptions}
           onCancelCompaction={onCancelCompaction}
           onCreateAgent={onCreateAgent}
-          onLoadOlderHistory={onLoadOlderHistory}
+          onLoadHistory={onLoadHistory}
           onOpenAddProjectDialog={onOpenAddProjectDialog}
           agentStore={agentStore}
           store={store}

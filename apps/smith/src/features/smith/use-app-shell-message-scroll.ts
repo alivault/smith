@@ -251,6 +251,10 @@ export function useAppShellMessageScroll() {
     scrollToStart({ behavior: "auto" })
   }
 
+  const stopScrollMomentum = () => {
+    if (viewport) stopMomentum(viewport)
+  }
+
   return {
     jumpStateStore: jumpStateStore as MessageJumpStateStore,
     jumpToNextMessage,
@@ -258,6 +262,7 @@ export function useAppShellMessageScroll() {
     scrollConversationToBottom,
     scrollConversationToTop,
     setViewport,
+    stopScrollMomentum,
     viewport,
   }
 }

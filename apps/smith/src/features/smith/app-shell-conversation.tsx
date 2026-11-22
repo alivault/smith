@@ -43,6 +43,7 @@ import {
 } from "@/features/smith/conversation-view"
 import {
   assistantMessagesSnapshotFromStore,
+  createConversationItemsStore,
   createMutableAssistantMessagesStore,
   useConversationGroupDescriptors,
   useConversationHasAssistantOutput,
@@ -59,6 +60,11 @@ import {
   type MessageJumpStateStore,
 } from "@/features/smith/use-app-shell-message-scroll"
 import { smithAgentScopeKey } from "@/features/smith/query-keys"
+import { useMachineFeature } from "@/features/smith/machine-store"
+import {
+  historyGapCount,
+  type HistoryLoadKind,
+} from "@/features/smith/conversation-history-window"
 import {
   MessageScroller,
   MessageScrollerContent,
@@ -131,17 +137,23 @@ function ConversationLatestMessageButton({
 }
 
 function ConversationFirstMessageButton({
+  canLoadFirst,
   conversationItemsStore,
   draft,
+  loading,
   onClick,
 }: {
+  /** The first message is not loaded, and a click loads it. */
+  canLoadFirst: boolean
   conversationItemsStore: ConversationItemsStore
   draft: boolean
+  loading: boolean
   onClick: () => void
 }) {
   const hasMessages = useConversationHasMessages(conversationItemsStore)
   const scrollable = useMessageScrollerScrollable()
-  const isDisabled = draft || !hasMessages || !scrollable.start
+  const isDisabled =
+    draft || !hasMessages || (!scrollable.start && !canLoadFirst)
 
   return (
     <TitleTooltip
@@ -152,11 +164,23 @@ function ConversationFirstMessageButton({
         variant="outline"
         size="icon"
         disabled={isDisabled}
-        className="pointer-events-auto rounded-full bg-secondary text-secondary-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-0 dark:bg-secondary dark:hover:bg-accent"
-        aria-label="Jump to first message"
+        className="pointer-events-auto relative rounded-full bg-secondary text-secondary-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-0 dark:bg-secondary dark:hover:bg-accent"
+        aria-label={
+          loading ? "Jump to first message, loading" : "Jump to first message"
+        }
+        aria-busy={loading || undefined}
         onClick={onClick}
       >
         <ArrowUpIcon className="size-4" />
+        {loading ? (
+          <Spinner
+            role="presentation"
+            aria-hidden="true"
+            aria-label={undefined}
+            strokeWidth={1.5}
+            className="absolute -inset-px size-[calc(100%+2px)]"
+          />
+        ) : null}
       </Button>
     </TitleTooltip>
   )
@@ -211,9 +235,11 @@ function ConversationMessageJumpButton({
 // (two buttons of 2.25rem and two gaps of 0.75rem). When the pane is wide
 // enough, the buttons sit next to the text, not on it.
 function ConversationJumpButtons({
+  canLoadFirst,
   centerMessages,
   conversationItemsStore,
   draft,
+  firstLoading,
   jumpStateStore,
   onFirst,
   onLatest,
@@ -221,9 +247,11 @@ function ConversationJumpButtons({
   onPrevious,
   streaming,
 }: {
+  canLoadFirst: boolean
   centerMessages: boolean
   conversationItemsStore: ConversationItemsStore
   draft: boolean
+  firstLoading: boolean
   jumpStateStore: MessageJumpStateStore
   onFirst: () => void
   onLatest: () => void
@@ -240,8 +268,10 @@ function ConversationJumpButtons({
         )}
       >
         <ConversationFirstMessageButton
+          canLoadFirst={canLoadFirst}
           conversationItemsStore={conversationItemsStore}
           draft={draft}
+          loading={firstLoading}
           onClick={onFirst}
         />
         <ConversationMessageJumpButton
@@ -274,7 +304,10 @@ type AppShellConversationAgentState = Pick<
   | "agentFile"
   | "agentId"
   | "streaming"
->
+> & {
+  /** The number of items in the head; see `conversation-history-window.ts`. */
+  headCount: number
+}
 
 function useAppShellConversationAgentState(store: SmithStore<AgentState>) {
   return useSelector(
@@ -287,6 +320,7 @@ function useAppShellConversationAgentState(store: SmithStore<AgentState>) {
       agentFile: agentState.agentFile,
       agentId: agentState.agentId,
       streaming: agentState.streaming,
+      headCount: agentState.headItems.length,
     }),
     { compare: shallowRecordEqual }
   )
@@ -334,15 +368,124 @@ function ConversationEarlierMessages({
   )
 }
 
+/** How far outside the view the gap row starts to load. */
+const HISTORY_GAP_AUTOLOAD_MARGIN_PX = 300
+
+/**
+ * The row between the head and the tail of a long conversation. When it
+ * comes into view, it loads a page on the side that the reader comes from:
+ * below the middle of the view (the reader scrolls down through the head)
+ * the next page of the head, which goes in below the view; above the middle
+ * (the reader scrolls up from the tail) an older page of the tail, which
+ * the scroller keeps the reader in place for. After each page it looks
+ * again, so it loads until it leaves the view.
+ */
+function ConversationHistoryGap({
+  centerMessages,
+  count,
+  historyLoad,
+  onLoadHistory,
+  viewport,
+}: {
+  centerMessages: boolean
+  count: number
+  historyLoad: HistoryLoadKind | null
+  onLoadHistory: (kind: HistoryLoadKind) => Promise<boolean>
+  viewport: HTMLDivElement | null
+}) {
+  const rowRef = React.useRef<HTMLDivElement | null>(null)
+  const busy = historyLoad !== null
+  const latestRef = React.useRef({ busy, onLoadHistory })
+  React.useLayoutEffect(() => {
+    latestRef.current = { busy, onLoadHistory }
+  })
+  const checkRef = React.useRef<() => void>(() => {})
+
+  React.useEffect(() => {
+    const row = rowRef.current
+    if (!row || !viewport || typeof IntersectionObserver === "undefined") {
+      return
+    }
+    // Measure, not the observer's last entry: after a page, the effect
+    // below runs before the observer reports the row's new place.
+    const check = () => {
+      if (latestRef.current.busy) return
+      const rowRect = row.getBoundingClientRect()
+      const viewRect = viewport.getBoundingClientRect()
+      const margin = HISTORY_GAP_AUTOLOAD_MARGIN_PX
+      if (
+        rowRect.bottom < viewRect.top - margin ||
+        rowRect.top > viewRect.bottom + margin
+      ) {
+        return
+      }
+      const below =
+        rowRect.top + rowRect.height / 2 >= viewRect.top + viewRect.height / 2
+      void latestRef.current.onLoadHistory(below ? "forward" : "older")
+    }
+    checkRef.current = check
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) check()
+      },
+      {
+        root: viewport,
+        rootMargin: `${HISTORY_GAP_AUTOLOAD_MARGIN_PX}px 0px`,
+      }
+    )
+    observer.observe(row)
+    return () => {
+      observer.disconnect()
+      checkRef.current = () => {}
+    }
+  }, [viewport])
+
+  // Look again after a page, in a frame: the head rows of the page render
+  // after this effect.
+  React.useEffect(() => {
+    if (busy) return
+    const frame = window.requestAnimationFrame(() => checkRef.current())
+    return () => window.cancelAnimationFrame(frame)
+  }, [busy])
+
+  return (
+    <div
+      ref={rowRef}
+      data-conversation-history-gap="true"
+      className={cn(
+        "flex items-center justify-center gap-1 pt-4 text-sm text-muted-foreground",
+        centerMessages && "mx-auto w-full max-w-[80ch]"
+      )}
+    >
+      <span>
+        {count.toLocaleString()} earlier {count === 1 ? "message" : "messages"}
+      </span>
+      <span aria-hidden="true">·</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={() => void onLoadHistory("forward")}
+      >
+        {busy ? <Spinner /> : null}
+        {busy ? "Loading…" : "Load"}
+      </Button>
+    </div>
+  )
+}
+
 type AppShellConversationFrameProps = {
   autoScrollEnabled: boolean
   centerMessages: boolean
   children: React.ReactNode
   conversationItemsStore: ConversationItemsStore
   emptyState: React.ReactNode
-  isLoadingOlderHistory: boolean
+  /** The rows of the head, above the scroller content. */
+  head: React.ReactNode
+  historyLoad: HistoryLoadKind | null
   isAgentViewLoading: boolean
-  onLoadOlderHistory: () => Promise<void>
+  onLoadHistory: (kind: HistoryLoadKind) => Promise<boolean>
   ref?: React.Ref<AppShellConversationFrameHandle>
   agentState: AppShellConversationAgentState
   viewportElementRef?: React.RefObject<HTMLElement | null>
@@ -426,9 +569,10 @@ function AppShellConversationScroller({
   centerMessages,
   conversationItemsStore,
   emptyState,
-  isLoadingOlderHistory,
+  head,
+  historyLoad,
   isAgentViewLoading,
-  onLoadOlderHistory,
+  onLoadHistory,
   ref,
   agentState,
   viewportElementRef,
@@ -440,8 +584,51 @@ function AppShellConversationScroller({
     scrollConversationToBottom,
     scrollConversationToTop,
     setViewport,
+    stopScrollMomentum,
     viewport,
   } = useAppShellMessageScroll()
+  const canLoadHistoryHead = useMachineFeature("conversation-history-after")
+  const canLoadFirst =
+    canLoadHistoryHead &&
+    !agentState.draft &&
+    agentState.historyOffset > 0 &&
+    agentState.headCount === 0
+  const gapCount = historyGapCount(
+    agentState.headCount,
+    agentState.historyOffset
+  )
+
+  // A jump to the first message of a long conversation loads the first
+  // page (the head) and scrolls to it when it shows. Clicks while it loads
+  // do nothing.
+  const scrollToTopWhenHeadShowsRef = React.useRef(false)
+  const jumpToFirstMessage = () => {
+    if (!canLoadFirst) {
+      scrollConversationToTop()
+      return
+    }
+    if (scrollToTopWhenHeadShowsRef.current) return
+    stopScrollMomentum()
+    scrollToTopWhenHeadShowsRef.current = true
+    void onLoadHistory("first").then((applied) => {
+      if (applied || !scrollToTopWhenHeadShowsRef.current) return
+      // The page did not load: scroll to the top of what is loaded.
+      scrollToTopWhenHeadShowsRef.current = false
+      scrollConversationToTop()
+    })
+  }
+  const scrollToTopAfterHeadShows = React.useEffectEvent(() => {
+    scrollConversationToTop()
+  })
+  React.useLayoutEffect(() => {
+    if (!scrollToTopWhenHeadShowsRef.current || agentState.headCount === 0) {
+      return
+    }
+    scrollToTopWhenHeadShowsRef.current = false
+    // The head rows render after this effect, from their store: scroll in
+    // the next frame, before it paints.
+    window.requestAnimationFrame(() => scrollToTopAfterHeadShows())
+  }, [agentState.headCount])
 
   React.useLayoutEffect(() => {
     if (viewportElementRef) viewportElementRef.current = viewport
@@ -453,13 +640,13 @@ function AppShellConversationScroller({
       jumpToNextMessage,
       jumpToPreviousMessage,
       scrollConversationToBottom,
-      scrollConversationToTop,
+      scrollConversationToTop: jumpToFirstMessage,
     }),
     [
       jumpToNextMessage,
       jumpToPreviousMessage,
       scrollConversationToBottom,
-      scrollConversationToTop,
+      jumpToFirstMessage,
     ]
   )
 
@@ -477,10 +664,21 @@ function AppShellConversationScroller({
           !centerMessages && "pr-16 md:pr-[66px]"
         )}
       >
-        {agentState.historyOffset > 0 && !isAgentViewLoading ? (
+        {isAgentViewLoading || agentState.headCount === 0 ? null : head}
+        {isAgentViewLoading ? null : gapCount > 0 ? (
+          <ConversationHistoryGap
+            centerMessages={centerMessages}
+            count={gapCount}
+            historyLoad={historyLoad}
+            onLoadHistory={onLoadHistory}
+            viewport={viewport}
+          />
+        ) : agentState.historyOffset > 0 && agentState.headCount === 0 ? (
           <ConversationEarlierMessages
-            isLoading={isLoadingOlderHistory}
-            onLoad={onLoadOlderHistory}
+            isLoading={historyLoad !== null}
+            onLoad={async () => {
+              await onLoadHistory("older")
+            }}
             viewport={viewport}
           />
         ) : null}
@@ -496,11 +694,13 @@ function AppShellConversationScroller({
 
       {!isAgentViewLoading ? (
         <ConversationJumpButtons
+          canLoadFirst={canLoadFirst}
           centerMessages={centerMessages}
           conversationItemsStore={conversationItemsStore}
           draft={agentState.draft}
+          firstLoading={historyLoad === "first"}
           jumpStateStore={jumpStateStore}
-          onFirst={scrollConversationToTop}
+          onFirst={jumpToFirstMessage}
           onLatest={scrollConversationToBottom}
           onNext={jumpToNextMessage}
           onPrevious={jumpToPreviousMessage}
@@ -577,6 +777,36 @@ function AppShellMessagesWorkingIndicator({
   )
 }
 
+// The head rows sit above the scroller content (see `ConversationHistoryHead`),
+// so they are plain elements: the scroller must not see them as its rows.
+const ConversationPlainRowsContext = React.createContext(false)
+
+function ConversationRow({
+  children,
+  className,
+  messageId,
+  scrollAnchor,
+}: {
+  children: React.ReactNode
+  className: string
+  messageId: string
+  scrollAnchor?: boolean
+}) {
+  const plain = React.useContext(ConversationPlainRowsContext)
+  if (plain) {
+    return <div className={cn("min-w-0 shrink-0", className)}>{children}</div>
+  }
+  return (
+    <MessageScrollerItem
+      messageId={messageId}
+      scrollAnchor={scrollAnchor}
+      className={className}
+    >
+      {children}
+    </MessageScrollerItem>
+  )
+}
+
 // Paint containment from content-visibility clips list markers and other
 // content that overflows the row, so rows stay fully painted.
 // The working footer can share the last row, so rows stack with a gap.
@@ -606,7 +836,7 @@ function ConversationGroupView({
     // The pending row and the summary row share this element, so keep the
     // same element type at the root for both.
     return (
-      <MessageScrollerItem
+      <ConversationRow
         messageId={messageId}
         scrollAnchor
         className={conversationItemClassName}
@@ -622,7 +852,7 @@ function ConversationGroupView({
           />
         )}
         {workingFooter}
-      </MessageScrollerItem>
+      </ConversationRow>
     )
   }
 
@@ -639,7 +869,7 @@ function ConversationGroupView({
   }
 
   return (
-    <MessageScrollerItem
+    <ConversationRow
       messageId={messageId}
       className={conversationItemClassName}
     >
@@ -652,7 +882,7 @@ function ConversationGroupView({
         store={store}
       />
       {workingFooter}
-    </MessageScrollerItem>
+    </ConversationRow>
   )
 }
 
@@ -680,7 +910,7 @@ function ConversationUserGroupRow({
     userItem && userItem.images.length === 0 && parseAgentNotice(userItem.text)
   )
   return (
-    <MessageScrollerItem
+    <ConversationRow
       messageId={messageId}
       scrollAnchor={!notice}
       className={conversationItemClassName}
@@ -694,7 +924,7 @@ function ConversationUserGroupRow({
         </div>
       ) : null}
       {workingFooter}
-    </MessageScrollerItem>
+    </ConversationRow>
   )
 }
 
@@ -825,6 +1055,58 @@ function AppShellConversationItemGroups({
         />
       ))}
     </>
+  )
+}
+
+/**
+ * The first items of a long conversation, after a jump to the first
+ * message. They sit above the scroller content, like the "Load earlier
+ * messages" row: the scroller looks for new turns in the rows that come
+ * after the rows it knows, and keeps the reader in place only when rows
+ * come before its first row. Head rows that go in above the gap are neither.
+ */
+function ConversationHistoryHead({
+  centerMessages,
+  hideThinking,
+  hideToolBlocks,
+  store,
+}: {
+  centerMessages: boolean
+  hideThinking: boolean
+  hideToolBlocks: boolean
+  store: ConversationItemsStore
+}) {
+  const groups = useConversationGroupDescriptors({
+    store,
+    hideFooter: false,
+    hideThinking,
+    hideToolBlocks,
+  })
+  if (groups.length === 0) return null
+  const columnClassName = centerMessages
+    ? "mx-auto w-full max-w-[80ch]"
+    : "w-full"
+
+  return (
+    <ConversationPlainRowsContext value>
+      <div
+        data-conversation-history-head="true"
+        className="flex flex-col gap-4 pt-4"
+      >
+        {groups.map((group) => (
+          <ConversationGroupView
+            key={group.key}
+            className={columnClassName}
+            group={group}
+            hideFooter={false}
+            hideThinking={hideThinking}
+            hideToolBlocks={hideToolBlocks}
+            messageId={group.key}
+            store={store}
+          />
+        ))}
+      </div>
+    </ConversationPlainRowsContext>
   )
 }
 
@@ -1013,12 +1295,12 @@ export const AppShellAgentConversation = React.memo(
     conversationFrameRef,
     conversationItemsStore,
     displaySettingsStore,
-    isLoadingOlderHistory,
+    historyLoad,
     isAgentViewLoading,
     isSubmitting,
     onCancelCompaction,
     onCreateAgent,
-    onLoadOlderHistory,
+    onLoadHistory,
     agentStore,
     viewerContextId,
     workingStateStore,
@@ -1027,12 +1309,12 @@ export const AppShellAgentConversation = React.memo(
     conversationFrameRef: React.RefObject<AppShellConversationFrameHandle | null>
     conversationItemsStore: ConversationItemsStore
     displaySettingsStore: SmithStore<AppShellDisplaySettingsState>
-    isLoadingOlderHistory: boolean
+    historyLoad: HistoryLoadKind | null
     isAgentViewLoading: boolean
     isSubmitting: boolean
     onCancelCompaction: () => void
     onCreateAgent: () => void
-    onLoadOlderHistory: () => Promise<void>
+    onLoadHistory: (kind: HistoryLoadKind) => Promise<boolean>
     agentStore: SmithStore<AgentState>
     viewerContextId: string
     workingStateStore: SmithStore<AppShellWorkingState | null>
@@ -1049,15 +1331,34 @@ export const AppShellAgentConversation = React.memo(
       conversationItemsStore.setItems(agentStore.state.items)
     }, [conversationItemsStore, hideThinking, hideToolBlocks, agentStore])
 
+    const headItems = useSelector(
+      agentStore,
+      (currentAgentState) => currentAgentState.headItems
+    )
+    const [headItemsStore] = React.useState<ConversationItemsStore>(() =>
+      createConversationItemsStore(agentStore.state.headItems)
+    )
+    React.useLayoutEffect(() => {
+      headItemsStore.setItems(headItems)
+    }, [headItems, headItemsStore, hideThinking, hideToolBlocks])
+
     return (
       <AppShellConversationFrame
         ref={conversationFrameRef}
         autoScrollEnabled={autoScrollEnabled}
         centerMessages={centerMessages}
         conversationItemsStore={conversationItemsStore}
-        isLoadingOlderHistory={isLoadingOlderHistory}
+        head={
+          <ConversationHistoryHead
+            centerMessages={centerMessages}
+            hideThinking={hideThinking}
+            hideToolBlocks={hideToolBlocks}
+            store={headItemsStore}
+          />
+        }
+        historyLoad={historyLoad}
         isAgentViewLoading={isAgentViewLoading}
-        onLoadOlderHistory={onLoadOlderHistory}
+        onLoadHistory={onLoadHistory}
         agentState={agentState}
         emptyState={
           <AppShellConversationEmptyState

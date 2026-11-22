@@ -246,6 +246,14 @@ import type {
   AgentStatusEvent,
 } from "@/lib/smith/api"
 import { useMachineId } from "@/lib/smith/machine-context"
+import {
+  appendHeadPage,
+  firstHeadPageRequest,
+  nextHeadPageRequest,
+  olderTailPageRequest,
+  prependTailPage,
+  type HistoryLoadKind,
+} from "@/features/smith/conversation-history-window"
 import { settle } from "@/lib/settle"
 
 const INITIAL_SIDEBAR_BOOTSTRAP_PROJECT_COUNT = 6
@@ -695,9 +703,10 @@ function useAppShellAgentWorkspaceView({
   const uiRequestOpenRef = React.useRef(false)
   const conversationFrameRef =
     React.useRef<AppShellConversationFrameHandle | null>(null)
-  const loadingOlderHistoryRef = React.useRef(false)
-  const [isLoadingOlderHistory, setIsLoadingOlderHistory] =
-    React.useState(false)
+  const historyLoadRef = React.useRef<HistoryLoadKind | null>(null)
+  const [historyLoad, setHistoryLoad] = React.useState<HistoryLoadKind | null>(
+    null
+  )
   const lastSyncedEditorTextRef = React.useRef("")
   const publishSidebarActiveAgent = (
     activeAgent: {
@@ -781,58 +790,84 @@ function useAppShellAgentWorkspaceView({
   const [conversationItemsStore] = React.useState<ConversationItemsStore>(() =>
     createConversationItemsStore(agentStore.state.items)
   )
-  const loadOlderHistory = async () => {
+  /**
+   * Load a page of the conversation: "older" goes back from the tail,
+   * "first" loads the head (the first page), and "forward" adds the next
+   * page to the head. One load runs at a time. The result tells whether the
+   * page is now shown.
+   */
+  const loadHistory = async (kind: HistoryLoadKind) => {
     const currentState = agentStateRef.current
-    const before = currentState.historyOffset
     const agentId = currentState.agentId?.trim()
-    if (
-      loadingOlderHistoryRef.current ||
-      currentState.draft ||
-      !agentId ||
-      before <= 0
-    ) {
-      return
-    }
+    if (historyLoadRef.current || currentState.draft || !agentId) return false
+    const request =
+      kind === "older"
+        ? olderTailPageRequest(currentState)
+        : kind === "first"
+          ? firstHeadPageRequest(currentState)
+          : nextHeadPageRequest(currentState)
+    if (!request) return false
 
     const agentKey = currentState.agentKey
-    loadingOlderHistoryRef.current = true
-    setIsLoadingOlderHistory(true)
+    historyLoadRef.current = kind
+    setHistoryLoad(kind)
     const result = await settle(
       fetchJson<Extract<AgentHistoryResponse, { ok: true }>>(
         buildRequestUrl("/api/agent/history", {
           machineId,
           contextId: viewerContextId,
           agentId,
-          searchParams: { before, limit: 50 },
+          searchParams: request,
         })
       )
     )
+    let applied = false
     if (!result.ok) {
       const error = result.error
-      toast.error("Could not load earlier messages", {
-        description: error instanceof Error ? error.message : String(error),
-      })
+      toast.error(
+        kind === "older"
+          ? "Could not load earlier messages"
+          : "Could not load the first messages",
+        {
+          description: error instanceof Error ? error.message : String(error),
+        }
+      )
     } else {
       const history = result.value
       const latestState = agentStateRef.current
-      // Show the older messages only when the agent and its history did not
-      // change while the request ran.
+      // Show the page only when the agent and its history did not change
+      // while the request ran.
       if (
         latestState.agentKey === agentKey &&
-        latestState.historyOffset === before
+        latestState.historyOffset === currentState.historyOffset &&
+        latestState.headItems === currentState.headItems
       ) {
-        const nextState = {
-          ...latestState,
-          items: [...history.items, ...latestState.items],
-          historyOffset: history.offset,
-          historyTotalCount: history.totalCount,
+        if (kind === "older") {
+          const tail = prependTailPage(latestState, history)
+          const nextState = {
+            ...latestState,
+            ...tail,
+            historyTotalCount: history.totalCount,
+          }
+          conversationItemsStore.setItems(nextState.items)
+          setAgentState(nextState)
+          applied = true
+        } else {
+          const headItems = appendHeadPage(latestState, history)
+          if (headItems) {
+            setAgentState({
+              ...latestState,
+              headItems,
+              historyTotalCount: history.totalCount,
+            })
+            applied = true
+          }
         }
-        conversationItemsStore.setItems(nextState.items)
-        setAgentState(nextState)
       }
     }
-    loadingOlderHistoryRef.current = false
-    setIsLoadingOlderHistory(false)
+    historyLoadRef.current = null
+    setHistoryLoad(null)
+    return applied
   }
   const [workingStateStore] = React.useState<
     SmithStore<AppShellWorkingState | null>
@@ -3782,7 +3817,7 @@ function useAppShellAgentWorkspaceView({
               />
             }
             terminalPanelOpen={terminalPanelOpen}
-            isLoadingOlderHistory={isLoadingOlderHistory}
+            historyLoad={historyLoad}
             isAgentViewLoading={isAgentViewLoading}
             isSubmitting={isSubmitting}
             isMobile={isMobile}
@@ -3791,7 +3826,7 @@ function useAppShellAgentWorkspaceView({
             onCreateAgent={(cwdOverride) => {
               void createAgent(cwdOverride)
             }}
-            onLoadOlderHistory={loadOlderHistory}
+            onLoadHistory={loadHistory}
             onOpenAddProjectDialog={openAddProjectDialog}
             onCloseAllFileViewTabs={closeAllFileViewTabs}
             onCloseFileViewTab={closeFileViewTab}

@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import type { HistoryLoadKind } from "@/features/smith/conversation-history-window"
 import {
   AppShellComposerController,
   NewAgentComposerSelectors,
@@ -54,13 +55,13 @@ export type AppShellAgentContentProps = {
   defaultNewAgentProject: string
   displaySettingsStore: SmithStore<AppShellDisplaySettingsState>
   fileInputRef: React.RefObject<HTMLInputElement | null>
-  isLoadingOlderHistory: boolean
+  historyLoad: HistoryLoadKind | null
   isAgentViewLoading: boolean
   isSubmitting: boolean
   newAgentProjectOptions: string[]
   onCancelCompaction: () => void
   onCreateAgent: (cwdOverride?: string) => void
-  onLoadOlderHistory: () => Promise<void>
+  onLoadHistory: (kind: HistoryLoadKind) => Promise<boolean>
   onOpenAddProjectDialog: () => void
   agentStore: SmithStore<AgentState>
   store: SmithStore<AppShellComposerSnapshot>
@@ -78,13 +79,13 @@ export function AppShellAgentContent({
   defaultNewAgentProject,
   displaySettingsStore,
   fileInputRef,
-  isLoadingOlderHistory,
+  historyLoad,
   isAgentViewLoading,
   isSubmitting,
   newAgentProjectOptions,
   onCancelCompaction,
   onCreateAgent,
-  onLoadOlderHistory,
+  onLoadHistory,
   onOpenAddProjectDialog,
   agentStore,
   store,
@@ -195,12 +196,12 @@ export function AppShellAgentContent({
             conversationFrameRef={conversationFrameRef}
             conversationItemsStore={conversationItemsStore}
             displaySettingsStore={displaySettingsStore}
-            isLoadingOlderHistory={isLoadingOlderHistory}
+            historyLoad={historyLoad}
             isAgentViewLoading={isAgentViewLoading}
             isSubmitting={isSubmitting}
             onCancelCompaction={onCancelCompaction}
             onCreateAgent={onCreateAgent}
-            onLoadOlderHistory={onLoadOlderHistory}
+            onLoadHistory={onLoadHistory}
             agentStore={agentStore}
             viewerContextId={viewerContextId}
             workingStateStore={workingStateStore}

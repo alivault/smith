@@ -472,6 +472,7 @@ function sameAgentStateExceptConversation(left: AgentState, right: AgentState) {
     left.draft === right.draft &&
     left.historyOffset === right.historyOffset &&
     left.historyTotalCount === right.historyTotalCount &&
+    left.headItems === right.headItems &&
     left.agentId === right.agentId &&
     left.agentKey === right.agentKey &&
     left.agentName === right.agentName &&

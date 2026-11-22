@@ -1904,16 +1904,35 @@ export class Agents implements HostAgents {
     this.#hub.push(await this.stateSync(id, options), { agentId: id })
   }
 
-  async history(id: string, before: number | undefined, limit: number) {
+  /**
+   * A page of the committed items. With `after`, the page starts at that
+   * index and goes forward (a jump to the first message loads it). Else it
+   * ends before `before` (or at the end) and goes back.
+   */
+  async history(
+    id: string,
+    page: { before?: number; after?: number },
+    limit: number
+  ) {
     const { committed } = await this.items(id)
-    const end = Math.min(before ?? committed.length, committed.length)
-    const offset = Math.max(0, end - limit)
+    const total = committed.length
+    let offset: number
+    let end: number
+    if (page.after !== undefined) {
+      offset = Math.min(Math.max(0, Math.floor(page.after)), total)
+      end = Math.min(offset + limit, total)
+    } else {
+      end = Math.min(Math.max(0, page.before ?? total), total)
+      offset = Math.max(0, end - limit)
+    }
     return {
       ok: true,
       offset,
+      end,
       limit,
-      totalCount: committed.length,
+      totalCount: total,
       hasMoreBefore: offset > 0,
+      hasMoreAfter: end < total,
       items: committed.slice(offset, end),
     }
   }
