@@ -21,9 +21,13 @@ export type AgentHistoryResponse =
   | {
       ok: true
       offset: number
+      /** The index after the last item. Older servers do not send it. */
+      end?: number
       limit: number
       totalCount: number
       hasMoreBefore: boolean
+      /** Older servers do not send it. */
+      hasMoreAfter?: boolean
       items: Array<ConversationItem>
     }
   | ApiErrorResponse

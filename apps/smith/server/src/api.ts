@@ -232,6 +232,7 @@ export function createApi(api: ApiContext) {
         "agent-index",
         "conversation",
         "paginated-conversation-history",
+        "conversation-history-after",
         "state-sync",
         "sse-replay",
         "prompt",
@@ -2037,11 +2038,12 @@ export function createApi(api: ApiContext) {
   router.get("/api/agent/history", async (request) => {
     const id = requireAgent(request)
     const before = queryNumber(request, "before")
+    const after = queryNumber(request, "after")
     const limit = Math.min(
       200,
       Math.max(1, queryNumber(request, "limit") ?? 50)
     )
-    return agents.history(id, before, limit)
+    return agents.history(id, { before, after }, limit)
   })
 
   router.post("/api/agent/answer", async (request) => {

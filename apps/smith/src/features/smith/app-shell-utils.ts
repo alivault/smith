@@ -9,6 +9,7 @@ import {
   type AgentState,
 } from "@/lib/smith"
 import { isApiErrorResponse } from "@/lib/smith/api"
+import { reconcileHistoryHead } from "@/features/smith/conversation-history-window"
 import {
   assertMachineWritable,
   hubUrl,
@@ -473,6 +474,11 @@ export function updateStateFromSync(
     typeof sync.historyTotalCount === "number"
       ? sync.historyTotalCount
       : base.historyTotalCount
+  const headItems = reconcileHistoryHead(
+    base.headItems,
+    historyOffset,
+    historyTotalCount
+  )
   const agentKey =
     typeof sync.agentKey === "string" ? sync.agentKey : base.agentKey
   const agentId = Object.prototype.hasOwnProperty.call(sync, "agentId")
@@ -554,6 +560,7 @@ export function updateStateFromSync(
     previous.items === items &&
     previous.historyOffset === historyOffset &&
     previous.historyTotalCount === historyTotalCount &&
+    previous.headItems === headItems &&
     previous.agentId === agentId &&
     previous.agentKey === agentKey &&
     previous.agentName === agentName &&
@@ -585,6 +592,7 @@ export function updateStateFromSync(
     items,
     historyOffset,
     historyTotalCount,
+    headItems,
     agentId,
     agentKey,
     agentName,

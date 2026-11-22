@@ -1516,6 +1516,7 @@ export function createInitialAgentState(): AgentState {
     items: [],
     historyOffset: 0,
     historyTotalCount: 0,
+    headItems: [],
     firstMessage: "",
     thinkingLevel: "xhigh",
     availableThinkingLevels: [

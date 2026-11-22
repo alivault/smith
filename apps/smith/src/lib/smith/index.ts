@@ -308,6 +308,12 @@ export type AgentState = {
   items: Array<ConversationItem>
   historyOffset: number
   historyTotalCount: number
+  /**
+   * Items [0, headItems.length) when the reader jumped to the first message
+   * of a long conversation. `items` stays the live tail from
+   * `historyOffset`; see `conversation-history-window.ts`.
+   */
+  headItems: Array<ConversationItem>
   agentId?: string
   agentKey?: string
   agentName?: string
