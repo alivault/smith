@@ -16,7 +16,7 @@ import * as esbuild from "esbuild"
 import Type, { type TSchema } from "typebox"
 
 import { createSmithCodingTools } from "../src/core/coding-tools.ts"
-import { StringEnum } from "../src/core/schema.ts"
+import { StringEnum, withDescriptions } from "../src/core/schema.ts"
 import { HostBridge } from "../src/extensions/host.ts"
 import { createSmithExtensions } from "../src/extensions/index.ts"
 import { tempDir } from "./support.ts"
@@ -96,6 +96,33 @@ void test("StringEnum renders one enum and validates like a union of literals", 
   assert.equal(validate(compact, { action: "remove" }).ok, false)
 })
 
+void test("withDescriptions replaces descriptions by path, in a copy", () => {
+  const schema = Type.Object({
+    path: Type.String({ description: "long" }),
+    edits: Type.Array(
+      Type.Object({ oldText: Type.String({ description: "long" }) }),
+      { description: "long" }
+    ),
+  })
+  const short = withDescriptions(schema, {
+    path: "p",
+    edits: "e",
+    "edits.oldText": "o",
+  })
+  const text = (value: unknown) =>
+    (value as { description?: string }).description
+  assert.equal(text(short.properties.path), "p")
+  assert.equal(text(short.properties.edits), "e")
+  assert.equal(text(short.properties.edits.items.properties.oldText), "o")
+  assert.equal(text(schema.properties.path), "long")
+  assert.throws(() => withDescriptions(schema, { nope: "x" }), /nope/)
+  assert.equal(
+    validate(short, { path: "a", edits: [{ oldText: "x" }] }).ok,
+    true
+  )
+  assert.equal(validate(short, { path: "a" }).ok, false)
+})
+
 void test("Smith tools have no unions of string literals", async () => {
   const dataDir = await tempDir()
   const host = new HostBridge()
@@ -118,6 +145,16 @@ void test("Smith tools have no unions of string literals", async () => {
     assert.ok(names.includes(name), name)
   for (const tool of tools)
     assert.deepEqual(literalUnions(tool.parameters), [], tool.name)
+  // The coding tools keep their schemas with shorter descriptions.
+  const edit = tools.find((tool) => tool.name === "edit")!
+  assert.equal(
+    validate(edit.parameters, {
+      path: "a",
+      edits: [{ oldText: "x", newText: "y" }],
+    }).ok,
+    true
+  )
+  assert.equal(validate(edit.parameters, { path: "a" }).ok, false)
   // The enum still rejects unknown actions.
   const todo = tools.find((tool) => tool.name === "todo")!
   assert.equal(validate(todo.parameters, { op: "set", items: [] }).ok, true)
@@ -160,6 +197,9 @@ void test("web_search lists its providers once, as one enum", async () => {
   const search = tools.find((tool) => tool.name === "web_search")
   if (!search) return // web access is off in this environment
   assert.deepEqual(literalUnions(search.parameters), [])
+  // TypeBox's marker would go to the model with each property.
+  for (const tool of tools)
+    assert.ok(!JSON.stringify(tool.parameters).includes("~optional"))
   const provider = (
     search.parameters as unknown as {
       properties: Record<string, { type?: string; enum?: string[] }>

@@ -446,16 +446,13 @@ export function createBrowserExtension(host: HostBridge) {
     // Actions share pages, so a round that uses them runs in order.
     executionMode: "sequential",
     description: [
-      "Your own browser. Logins and cookies persist across restarts. Actions:",
-      "open (url, new_tab: open a page and read it: its title, headings, numbered interactive elements, and text);",
-      "snapshot (read the current page again);",
-      "click, fill (replace the text of a field with value), type (add the keys of value), press (a key such as Enter), select (an option), check, uncheck, hover, scroll (value down or up): target an element with ref (from the last snapshot), a CSS selector, or its visible text; returns the new snapshot;",
-      "upload (paths: absolute paths of files on this machine; target the file input, or the button that opens the file dialog, with ref, selector, or text; with no target, the first file input);",
-      "screenshot (full_page);",
-      "eval (a JavaScript expression in the page; returns its JSON value);",
-      "tabs, switch_tab (id), close_tab (id);",
-      "handoff (text: what the user should do, for example log in to a site or solve a captcha; the user sees your browser live in Smith and uses it, and the call waits until the user answers; use it only when you cannot go on yourself);",
-      "close (close the browser; cookies stay saved).",
+      "Your own browser; logins and cookies persist. Actions:",
+      "open (url, new_tab: open a page and read it: title, headings, numbered interactive elements, text); snapshot (read the page again);",
+      "click, fill (replace the text of a field with value), type (add the keys of value), press (a key, e.g. Enter), select, check, uncheck, hover, scroll (value: down or up): target with ref (from the last snapshot), selector (CSS), or text; returns the new snapshot;",
+      "upload (paths: absolute paths; target the file input or its button; default: the first file input);",
+      "screenshot (full_page); eval (a JavaScript expression; returns its JSON value); tabs, switch_tab (id), close_tab (id);",
+      "handoff (text: what the user must do, e.g. log in or solve a captcha; the user uses your browser live, and the call waits for the answer; only when you cannot go on);",
+      "close (cookies stay).",
     ].join(" "),
     parameters: Type.Object({
       action: StringEnum(Object.keys(ACTIONS)),

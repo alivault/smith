@@ -436,12 +436,10 @@ export function createWatchExtension(host: HostBridge) {
   const watchTool = defineTool({
     name: "watch",
     description: [
-      "Wait for a condition without blocking: Smith checks it at an interval in the background and sends you `message`, with the output of the last check, when it is true. When it stays false until timeout, you get a timed-out message. It survives a server restart.",
-      "Use watch instead of sleep, a polling loop in bash, or waiting in a tool call. Set it, then end your turn or do other work; the message starts a new turn.",
-      "Kinds: command (until exit 0; until failure, change, or match with pattern on the output), url (until HTTP status, default 200; or match with pattern on the body, or change), file (until it exists; or missing, change, match), pr_checks (the GitHub checks of a PR through gh: until done, success, or failure; pr is a number, URL, or branch, default the current branch).",
-      "Examples: wait for an npm version to appear: watch { kind: 'url', url: 'https://registry.npmjs.org/<package>/<version>', message: 'Version is published' }. After git push: watch { kind: 'pr_checks', message: 'CI finished; fix failures' }. A deploy: watch { kind: 'url', url, pattern: 'v1.2.3' }.",
-      "interval: default 30s, at least 5s. timeout: default 1h, at most 7d. action list shows your watches with their last check; action cancel stops watch `id`.",
-      "Until a watch fires, you show as waiting, not done.",
+      "Wait for a condition in the background: Smith checks it at an interval and sends you `message` with the output of the last check when it is true, or a timed-out message. It survives a restart. Set it, then end your turn or keep working; the message starts a new turn. Until it fires, you show as waiting.",
+      "kind and until (first is the default; pattern makes it match): command: success (exit 0), failure, match (output), change; url: status, match (body), change; file: exists, missing, change, match; pr_checks (GitHub checks through gh): done, success, failure.",
+      "Examples: { kind: 'pr_checks', message: 'CI done; fix failures' } after a push; { kind: 'url', url: 'https://registry.npmjs.org/<package>/<version>', message: 'Published' }.",
+      "list: your watches with their last check. cancel: watch id.",
     ].join(" "),
     parameters: Type.Object({
       action: Type.Optional(StringEnum(["create", "list", "cancel"])),
@@ -450,35 +448,37 @@ export function createWatchExtension(host: HostBridge) {
         Type.String({ description: "create: what you get when it fires" })
       ),
       command: Type.Optional(
-        Type.String({ description: "command: a shell command" })
+        Type.String({ description: "command: shell command" })
       ),
-      url: Type.Optional(Type.String({ description: "url: the address" })),
+      url: Type.Optional(Type.String({ description: "url: address" })),
       path: Type.Optional(
-        Type.String({ description: "file: a path, relative to your cwd" })
+        Type.String({ description: "file: path, relative to your cwd" })
       ),
       pr: Type.Optional(
-        Type.String({ description: "pr_checks: PR number, URL, or branch" })
-      ),
-      until: Type.Optional(
         Type.String({
           description:
-            "The condition: command success|failure|match|change, url status|match|change, file exists|missing|change|match, pr_checks done|success|failure",
+            "pr_checks: PR number, URL, or branch (default: current branch)",
         })
       ),
+      until: Type.Optional(
+        Type.String({ description: "The condition, by kind (see above)" })
+      ),
       pattern: Type.Optional(
-        Type.String({ description: "A regular expression, for match" })
+        Type.String({ description: "Regular expression, for match" })
       ),
       status: Type.Optional(
-        Type.Number({ description: "url: the HTTP status (default 200)" })
+        Type.Number({ description: "url: HTTP status (default 200)" })
       ),
       interval: Type.Optional(
-        Type.String({ description: "Time between checks (default 30s)" })
+        Type.String({
+          description: "Time between checks (default 30s, min 5s)",
+        })
       ),
       timeout: Type.Optional(
-        Type.String({ description: "When to give up (default 1h, max 7d)" })
+        Type.String({ description: "Give up after (default 1h, max 7d)" })
       ),
-      label: Type.Optional(Type.String({ description: "A short name" })),
-      id: Type.Optional(Type.String({ description: "cancel: the watch id" })),
+      label: Type.Optional(Type.String({ description: "Short name" })),
+      id: Type.Optional(Type.String({ description: "cancel: watch id" })),
     }),
     replay: "safe",
     async execute(args, api, context) {

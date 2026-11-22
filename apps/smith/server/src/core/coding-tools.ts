@@ -40,6 +40,7 @@ import { agentIdOf } from "../extensions/host.ts"
 import { endBashCall, ensureWatchdog, startBashCall } from "./bash-calls.ts"
 import { bashGuard, findProfile } from "./profiles.ts"
 import { sandboxAvailable, sandboxExecution } from "./sandbox.ts"
+import { withDescriptions } from "./schema.ts"
 
 const run = promisify(execFile)
 
@@ -58,13 +59,58 @@ export const NON_INTERACTIVE_ENV: Readonly<Record<string, string>> = {
 }
 
 const bashParameters = Type.Object({
-  command: Type.String({ description: "Bash command to execute" }),
+  command: Type.String({ description: "The command" }),
   timeout: Type.Optional(
     Type.Number({
-      description: `Timeout in seconds (optional, default ${DEFAULT_TIMEOUT_SECONDS}). For longer work, use job_start.`,
+      description: `Seconds (default ${DEFAULT_TIMEOUT_SECONDS})`,
     })
   ),
 })
+
+/** pi's read tool, with a shorter description. */
+function readTool(options: ReadToolOptions) {
+  const read = createReadTool(options)
+  const formats =
+    /images \(([^)]+)\)/.exec(read.description)?.[1] ?? "jpg, png, gif, webp"
+  return {
+    ...read,
+    description: `Read a file. Images (${formats}) come as attachments. Text stops at 2000 lines or 50KB: continue with offset. When you need all of a file, read all of it.`,
+    parameters: withDescriptions(read.parameters, {
+      path: "Relative or absolute",
+      offset: "First line (1-based)",
+      limit: "Lines to read",
+    }),
+  }
+}
+
+/** pi's write and edit tools, with shorter descriptions. */
+function writeTool() {
+  const write = createWriteTool()
+  return {
+    ...write,
+    description:
+      "Create a file or replace all of its content. Creates parent directories.",
+    parameters: withDescriptions(write.parameters, {
+      path: "Relative or absolute",
+      content: "The full content",
+    }),
+  }
+}
+
+function editTool() {
+  const edit = createEditTool()
+  return {
+    ...edit,
+    description:
+      "Replace exact text in one file. Each edits[].oldText must match one unique part of the original file, and edits must not overlap: merge nearby changes into one edit. Do not include large unchanged text to join distant changes.",
+    parameters: withDescriptions(edit.parameters, {
+      path: "Relative or absolute",
+      edits: "Replacements, each matched against the original file",
+      "edits.oldText": "Exact text, unique in the file",
+      "edits.newText": "Replacement text",
+    }),
+  }
+}
 
 /** The error of a call that the timeout stopped, with what to do instead. */
 export function timeoutMessage(seconds: number, isDefault: boolean) {
@@ -181,12 +227,12 @@ export function createSmithCodingTools(options: {
   return defineExtension({
     name: "coding-tools",
     tools: [
-      createReadTool(options.images ? { images: options.images } : {}),
-      createWriteTool(),
-      createEditTool(),
+      readTool(options.images ? { images: options.images } : {}),
+      writeTool(),
+      editTool(),
       defineTool({
         ...bash,
-        description: `${bash.description.replace(/ Optionally provide a timeout in seconds\.$/, "")} The call stops after ${defaultTimeout / 60} minutes unless you give a timeout in seconds; run longer work with job_start. The command gets no input: stdin is /dev/null, and editors, pagers, and git prompts are off.`,
+        description: `Run a bash command in the working directory. Returns stdout and stderr; long output keeps the last 2000 lines or 50KB and saves the rest to a temp file. Stops after ${defaultTimeout / 60} minutes unless you set timeout; run longer work with job_start. No input: stdin is /dev/null, and editors, pagers, and git prompts are off.`,
         parameters: bashParameters,
         async execute(args, api, context) {
           const isDefault = args.timeout === undefined

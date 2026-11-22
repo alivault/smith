@@ -121,31 +121,28 @@ export function createOpenFileExtension(host: HostBridge) {
   const openFileTool = defineTool({
     name: "open_file",
     description: [
-      "Open a file in the user's file viewer in Smith, and jump to a line or a range of lines, which the viewer highlights.",
-      "Use it to show the user a specific place: the change you made, the line of a log or an error, the code that you talk about.",
-      "Do not use it for each file that you read. It does not give you the content; use read for that.",
-      "The file must be inside your working directory. path is relative to it, or absolute.",
-      "note is one short line that the user sees with the file.",
+      "Show the user a file in Smith's file viewer, at a line or a highlighted range: the change you made, a log line, the code you talk about.",
+      "It returns no content. The file must be inside your working directory.",
     ].join(" "),
     parameters: Type.Object({
       path: Type.String({
-        description: "The file, relative to the working directory or absolute",
+        description: "Relative to the working directory, or absolute",
       }),
       line: Type.Optional(
         Type.Integer({
           minimum: 1,
-          description: "First line to show (1-based)",
+          description: "First line (1-based)",
         })
       ),
       end_line: Type.Optional(
         Type.Integer({
           minimum: 1,
-          description: "Last line of the range to highlight",
+          description: "Last line to highlight",
         })
       ),
       note: Type.Optional(
         Type.String({
-          description: "One short line for the user, for example 'the fix'",
+          description: "One short line shown with the file",
         })
       ),
     }),

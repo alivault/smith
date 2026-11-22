@@ -10,6 +10,32 @@
  */
 import Type, { type TSchemaOptions } from "typebox"
 
+/**
+ * A copy of an object schema with other property descriptions, by path:
+ * `edits` is a property, `edits.oldText` a property of its items. For the
+ * schemas of tools that Smith takes from pi, which have long descriptions.
+ */
+export function withDescriptions<T>(
+  schema: T,
+  descriptions: Record<string, string>
+): T {
+  const copy = JSON.parse(JSON.stringify(schema)) as T
+  for (const [path, description] of Object.entries(descriptions)) {
+    let node = copy as Record<string, unknown> | undefined
+    for (const name of path.split(".")) {
+      if (node?.type === "array")
+        node = node.items as Record<string, unknown> | undefined
+      const properties = node?.properties as
+        | Record<string, Record<string, unknown>>
+        | undefined
+      node = properties?.[name]
+    }
+    if (!node) throw new Error(`No schema property ${path}`)
+    node.description = description
+  }
+  return copy
+}
+
 /** A string that is one of `values`, as `{ type: "string", enum }`. */
 export function StringEnum<const T extends readonly string[]>(
   values: T,

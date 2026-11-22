@@ -176,9 +176,9 @@ export async function updateTodo(
 }
 
 const TEXT_DESCRIPTION =
-  "A short title of the step, at most about 8 words, for example 'Add the permission dialog'. The user sees it in a one-line progress chip. Put details in note."
+  "Short title, at most about 8 words; shown in a one-line progress chip"
 const NOTE_DESCRIPTION =
-  "Optional details of the step: the plan, sub-steps, links, agent IDs, decisions, or why it is blocked. Shown under the title in the Agent panel."
+  "Details: the plan, links, agent IDs, decisions, or why it is blocked"
 
 const itemSchema = Type.Object({
   text: Type.String({ description: TEXT_DESCRIPTION }),
@@ -189,18 +189,17 @@ const itemSchema = Type.Object({
 const todoTool = defineTool({
   name: "todo",
   description: [
-    "Keep a todo list for multi-step work. The user sees it as a live checklist, and it survives context compaction.",
-    "Ops: set (replace the list), add, update (status, text, or note of one item by id), remove, clear (done items, or all), list.",
-    "Each item has a short title (text) and optional details (note). Keep the title short and put everything else in the note.",
-    "Mark one item active while you work on it, and done when it is finished. Use it for tasks with 3 or more steps.",
+    "A todo list for work with 3 or more steps. The user sees it as a live checklist; it survives compaction.",
+    "Ops: set (replace the list), add, update (status, text, or note of item id), remove, clear (scope: done (default) or all), list.",
+    "Keep the title short and put the rest in note. Mark one item active while you work on it, and done when it is finished.",
   ].join(" "),
   parameters: Type.Object({
     op: StringEnum(["set", "add", "update", "remove", "clear", "list"]),
     items: Type.Optional(Type.Array(itemSchema)),
     id: Type.Optional(Type.String()),
     status: Type.Optional(StringEnum(STATUSES)),
-    text: Type.Optional(Type.String({ description: TEXT_DESCRIPTION })),
-    note: Type.Optional(Type.String({ description: NOTE_DESCRIPTION })),
+    text: Type.Optional(Type.String({ description: "add, update: title" })),
+    note: Type.Optional(Type.String({ description: "add, update: details" })),
     scope: Type.Optional(StringEnum(["done", "all"])),
   }),
   replay: "safe",

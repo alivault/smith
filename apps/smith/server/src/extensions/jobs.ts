@@ -1440,30 +1440,28 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
     name: "job_start",
     executionMode: "sequential",
     description: [
-      "Start a long command in the background and return at once: dev servers, watchers, long builds or test runs.",
-      "The user can watch it live in the terminal panel. Use the terminal tool to list jobs, read their output, stop them, read the screen, wait for output, type into them, or bring in the user.",
-      "With notify_on_exit (default true), you get a message with the exit code and the last output when it ends, also while you are busy (at your next turn boundary).",
-      "Set wait_on_exit (default false) when you continue your work after the job ends, for example a build or a test run: until then you show as waiting, not done. Do not set it for a job that runs until it is stopped, such as a dev server or a watcher. wait_on_exit also sets notify_on_exit.",
-      "You do not need to wait or poll: do other work, or end your turn, and the exit message starts a new turn. To wait for the job to end, end your turn, also when you have nothing else to do. Use the terminal tool's wait only for a line of output that comes soon (for example 'ready').",
-      "With interactive, the command shows as a live terminal in the chat, where the user types (a login, a password, a choice that is the user's), and the call returns when the command exits. Give a short prompt for the user.",
+      "Start a long command in the background and return at once: dev servers, watchers, long builds and tests. The user sees it live in the terminal panel. Use the terminal tool to read, wait on, type into, or stop it.",
+      "notify_on_exit (default true): when it ends, you get a message with the exit code and the last output. wait_on_exit: set it when you continue after the job ends (a build, tests); until then you show as waiting. Not for a server or a watcher.",
+      "To wait for the job to end, end your turn, also when you have nothing else to do: the exit message starts a new turn. Use terminal wait only for output that comes soon (e.g. 'ready').",
+      "interactive: the command shows as a live terminal in the chat, where the user types (a login, a password, the user's choice); the call returns when it exits.",
     ].join(" "),
     parameters: Type.Object({
       command: Type.String(),
       cwd: Type.Optional(Type.String()),
-      name: Type.Optional(Type.String({ description: "A short label" })),
+      name: Type.Optional(Type.String({ description: "Short label" })),
       notify_on_exit: Type.Optional(Type.Boolean()),
       wait_on_exit: Type.Optional(Type.Boolean()),
       wait_ms: Type.Optional(
         Type.Number({
           description:
-            "Wait this long for early output or failure (default 2000, max 30000)",
+            "Wait for early output or failure (default 2000, max 30000)",
         })
       ),
       interactive: Type.Optional(Type.Boolean()),
       prompt: Type.Optional(
         Type.String({
           description:
-            'With interactive: one short line for the user, for example "Log in to asahi"',
+            'interactive: one short line for the user, e.g. "Log in to asahi"',
         })
       ),
     }),
@@ -1711,10 +1709,9 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
     // Actions on one terminal depend on each other: run calls in order.
     executionMode: "sequential",
     description: [
-      "Use terminals: your jobs (from job_start or open), the running jobs of other agents in this project, and the user's terminal tabs of this agent.",
-      "Another agent's job is read only (list, output, read, wait), except the jobs of your subagents and of archived agents that no agent above controls: you may also stop them, type into them, and close them.",
-      'Actions: list (all, with memory; with id, one job and its last output); output (the log of a job: the last `tail` lines, default 80, lines from `from_line`, or only lines that match `grep`); stop (stop a job: SIGTERM, then SIGKILL); open (a shell, or `command`, in a new terminal; it is a job); read (source visible: the screen now, for full-screen programs; recent: the last `lines` with scrollback); wait (until a line matches `pattern`, the job waits for input, or exits; at most 5 minutes; to wait for the exit of a job that reports it, end your turn instead); send_text (type `text`, with `enter` to press Enter); send_keys (`keys`, for example ["up", "enter"] or ["ctrl+c"]); focus (bring the user to the terminal with `prompt`, only when the user is needed: a password, a login, a choice that is the user\'s); close (remove a finished job and its log).',
-      "send_text and send_keys refuse when the terminal hides input: a secret is for the user. You can read the user's terminals, but not type in them.",
+      "Use terminals: your jobs (from job_start or open), the running jobs of other agents in this project, and the user's terminal tabs of this agent. The jobs of other agents and the user's tabs are read only (list, output, read, wait); you can also stop, type into, and close the jobs of your subagents and of archived agents that no agent above controls.",
+      "Actions: list (with id: one job and its last output); output (the log: last `tail` lines (default 80), from `from_line`, or lines that match `grep`); stop (SIGTERM, then SIGKILL); open (a shell or `command` in a new terminal job); read (source visible: the screen now; recent: last `lines` with scrollback); wait (until a line matches `pattern`, the job waits for input, or it exits; at most 5 minutes; to wait for the exit of a job, end your turn instead); send_text (`text`; `enter` presses Enter); send_keys (`keys`); focus (bring the user to the terminal with `prompt`, only for a password, a login, or the user's choice); close (remove a finished job and its log).",
+      "send_text and send_keys refuse when the terminal hides input: a secret is for the user.",
     ].join(" "),
     parameters: Type.Object({
       action: StringEnum([
@@ -1730,9 +1727,9 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
         "close",
       ]),
       id: Type.Optional(
-        Type.String({ description: "A job ID, or a user terminal ID (u-…)" })
+        Type.String({ description: "Job ID, or user terminal ID (u-…)" })
       ),
-      label: Type.Optional(Type.String({ description: "open: a short name" })),
+      label: Type.Optional(Type.String({ description: "open: short name" })),
       command: Type.Optional(
         Type.String({ description: "open: the command (default: a shell)" })
       ),
@@ -1757,14 +1754,12 @@ export function createJobsExtension(host: HostBridge, dataDir: string) {
       ),
       prompt: Type.Optional(
         Type.String({
-          description:
-            'focus: one short line for the user, for example "Type your password for asahi"',
+          description: "focus: one short line for the user",
         })
       ),
       focus: Type.Optional(
         Type.Boolean({
-          description:
-            "open: bring the user to it at once (default false; only when the user is needed)",
+          description: "open: bring the user to it at once",
         })
       ),
     }),

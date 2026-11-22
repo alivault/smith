@@ -8,7 +8,7 @@
  * MCP server also uses. Smith drives the same core and its MCP tool schemas.
  * Configuration is pi-web-access's own `~/.pi/web-search.json`.
  */
-import Type, { type TSchema } from "typebox"
+import type { TSchema } from "typebox"
 import {
   defineExtension,
   type Extension,
@@ -106,6 +106,37 @@ export function searchProviders(): string[] {
 }
 
 /**
+ * An object schema whose properties are all optional, as plain JSON Schema.
+ * pi-web-access's properties carry TypeBox's `~optional` marker as a plain
+ * key, which pi-ai would send to the model with each property.
+ */
+function optionalObject(
+  properties: Record<string, TSchema>,
+  options: { additionalProperties?: boolean } = {}
+): TSchema {
+  const plain: Record<string, unknown> = {}
+  for (const [name, schema] of Object.entries(properties)) {
+    const { "~optional": _optional, ...rest } = schema as Record<
+      string,
+      unknown
+    >
+    plain[name] = rest
+  }
+  return { type: "object", properties: plain, ...options } as TSchema
+}
+
+/** Shorter descriptions of `web_search` parameters. */
+const SEARCH_DESCRIPTIONS: Record<string, string> = {
+  query: "One query",
+  queries: "Several queries, searched in parallel",
+  numResults: "Results per query (default 5)",
+  includeContent: "Also fetch the full pages; read them with fetch_content",
+  domainFilter: "Only these domains; prefix - to exclude",
+  category: "Exa only, e.g. news, research paper",
+  proxy: "Proxy URL for this call; empty: direct",
+}
+
+/**
  * `web_search` with a compact `provider`: one enum, not pi-web-access's
  * union of a single provider and a list of providers, which lists each
  * provider twice. A list of providers is rarely needed; `all` searches
@@ -118,20 +149,40 @@ function searchTool(search: Definition) {
   const { provider: _provider, ...rest } = schema.properties
   const properties: Record<string, TSchema> = {}
   for (const [name, property] of Object.entries(rest))
-    properties[name] = Type.Optional(property)
-  properties.provider = Type.Optional(
-    StringEnum(["auto", "all", ...searchProviders()], {
-      description:
-        "Search provider. Default auto: the configured one. all: every provider with credentials.",
-    })
-  )
+    properties[name] = {
+      ...property,
+      ...(SEARCH_DESCRIPTIONS[name]
+        ? { description: SEARCH_DESCRIPTIONS[name] }
+        : {}),
+    }
+  properties.provider = StringEnum(["auto", "all", ...searchProviders()], {
+    description:
+      "Default auto: the configured provider. all: every provider with credentials.",
+  })
   return webTool(
     search,
     (args, signal) => core().webSearch(args as never, signal),
     {
-      parameters: Type.Object(properties, { additionalProperties: false }),
+      description:
+        "Search the web. Returns source-linked results or provider answers, and a responseId: read the full results with fetch_content.",
+      parameters: optionalObject(properties, { additionalProperties: false }),
     }
   )
+}
+
+/** Shorter descriptions of `fetch_content` parameters. */
+const FETCH_DESCRIPTIONS: Record<string, string> = {
+  urls: "Several URLs, fetched in parallel",
+  mode: "readable (default): markdown; raw: the exact body",
+  forceClone: "Clone a GitHub repository also when it is large",
+  proxy: "Proxy URL for this call; empty: direct",
+  query: "Stored results of this query",
+  queryIndex: "Stored results of the query at this index",
+  urlIndex: "Stored content of the URL at this index",
+  offset: "Character offset (default 0)",
+  limit: "Characters to return",
+  findText: "Text or texts to find",
+  findMode: "exact, case-insensitive (default), or fuzzy",
 }
 
 /**
@@ -152,13 +203,15 @@ function fetchTool(fetch: Definition, get: Definition | undefined) {
   properties.responseId = {
     ...getSchema.properties.responseId!,
     description:
-      "Read stored content: the responseId of an earlier web_search or fetch_content. Then url, urlIndex, query, queryIndex select the stored item, and offset, limit, findText, findMode select the part.",
+      "Read stored content of an earlier web_search or fetch_content. Select it with url, urlIndex, query, queryIndex; select the part with offset, limit, findText, findMode.",
   }
   properties.url = {
     ...fetchSchema.properties.url!,
-    description:
-      "Single URL to fetch. With responseId: select the stored content of this URL.",
+    description: "URL to fetch; with responseId: the stored URL",
   }
+  for (const [name, description] of Object.entries(FETCH_DESCRIPTIONS))
+    if (properties[name])
+      properties[name] = { ...properties[name], description }
   return webTool(
     fetch,
     (args, signal) =>
@@ -167,17 +220,9 @@ function fetchTool(fetch: Definition, get: Definition | undefined) {
         : core().fetchContent(args as never, signal),
     {
       description:
-        "Fetch URL(s) and return bounded content. Supports web pages, GitHub repositories, and PDFs. Full content is stored: with the returned responseId, read more pages of it (offset, limit) or find passages (findText). The same works for the results of web_search.",
+        "Fetch URLs (web pages, GitHub repositories, PDFs) and return bounded content. The full content is stored under a responseId: read more of it (offset, limit) or find passages (findText). This also reads web_search results.",
       // Every property is optional: a call gives url, urls, or responseId.
-      // Type.Object marks a property that is not Type.Optional as required.
-      parameters: Type.Object(
-        Object.fromEntries(
-          Object.entries(properties).map(([name, schema]) => [
-            name,
-            Type.Optional(schema),
-          ])
-        )
-      ),
+      parameters: optionalObject(properties),
     }
   )
 }

@@ -639,7 +639,7 @@ function status(item: {
 const MACHINE_PARAMETER = Type.Optional(
   Type.String({
     description:
-      "Another machine of this Smith hub (label or ID). Without it, the tool works on this machine.",
+      "Another machine of this Smith hub (label or ID); default: this one",
   })
 )
 
@@ -929,11 +929,10 @@ export function createAgentsExtension(host: HostBridge) {
     name: "spawn_subagent",
     executionMode: "sequential",
     description: [
-      "Start a subagent: a full agent with its own context that works on `goal`. The user can open it in the sidebar.",
-      "Use it to split independent work or to get a fresh review. It works in the background: its messages (done or a question) come in your follow-up queue after your current turn, so keep working. A subagent that waits on a timer, a watch, or a job sends no message until it is done or asks. Set wait to get the answer as the result.",
-      "Without worktree, the subagent works in the same directory as you and can edit the same files. Set worktree: true for parallel edits; the subagent gets its own git branch and worktree.",
-      "Tools: profile picks a set (builder, researcher, reviewer, read-only, or full; default full). A subagent has no ask_user or spawn_subagent unless you put them in add. remove takes more tools away. Bash in a subagent refuses git push to main, sudo, and the commands in deny_commands.",
-      "Write the goal as a complete brief: the subagent does not see this conversation.",
+      "Start a subagent: a full agent with its own context that works on `goal`. Write goal as a complete brief: the subagent does not see this conversation. Use it to split independent work or for a fresh review.",
+      "It works in the background: its messages (done or a question) come in your follow-up queue after your turn, so keep working. Set wait to get its answer as the result. A subagent that waits on a timer, a watch, or a job sends nothing until it is done or asks.",
+      "Without worktree, it works in your directory on the same files. worktree: true gives it its own git branch and worktree, for parallel edits.",
+      "profile: builder, researcher, reviewer, read-only, or full (default). It has no ask_user or spawn_subagent unless you add them. Its bash refuses git push to main, sudo, and deny_commands.",
     ].join(" "),
     parameters: Type.Object({
       goal: Type.String(),
@@ -945,14 +944,12 @@ export function createAgentsExtension(host: HostBridge) {
       thinking: Type.Optional(Type.String()),
       profile: Type.Optional(
         Type.String({
-          description:
-            "Tools profile: builder, researcher, reviewer, read-only, full (default), or a profile of the user",
+          description: "Tool profile (see above), or a profile of the user",
         })
       ),
       add: Type.Optional(
         Type.Array(Type.String(), {
-          description:
-            "Tools to give the subagent, also ask_user or spawn_subagent",
+          description: "Tools to give",
         })
       ),
       remove: Type.Optional(
@@ -961,7 +958,7 @@ export function createAgentsExtension(host: HostBridge) {
       deny_commands: Type.Optional(
         Type.Array(Type.String(), {
           description:
-            "Commands that the subagent's bash refuses, by their first words, for example `npm publish` or `git reset --hard`",
+            "Commands that its bash refuses, by first words, e.g. `npm publish`",
         })
       ),
       worktree: Type.Optional(
@@ -2272,17 +2269,15 @@ export function createAgentsExtension(host: HostBridge) {
     name: "agents",
     description: [
       "Look at, message, and manage other agents. Actions:",
-      "list (scope: subagents (default), project, all, or archived);",
-      "search (find past work: the messages of all agents, also archived ones, that match query; scope: project for this project only; use it before a task that may have been done or discussed before);",
-      "read (the last messages of agent id; last, default 6; include_tools; with entry, the messages around that entry of a search hit);",
-      "wait (until no agent of ids works, or with any: true until one of them has an answer you have not seen; timeout in seconds; returns their answers);",
-      "send (send message to agent id, for example your subagent, your parent, or an agent that builds what you review; mode: followUp (default; after its current work) or steer (into its current work at its next tool call; you cannot take a steer back); with wait: true the result is its answer, otherwise its answer comes to you as a message; add and remove change the tools of your subagent, for example add: ['ask_user'] answers a subagent that asked for a tool; a message to your parent always goes into its follow-up queue);",
-      "queue (the messages that still wait in the follow-up queue of agent id, in order, each with an item ID, its sender, and its time; for your subagents you see all items, also the user's prompts; for other agents only the messages that you sent);",
-      "unsend (take item, an item ID from queue, out of the queue of agent id before the agent gets it; from your subagents any item, from other agents only your own messages; it fails when the agent already got the message);",
-      "stop (stop the current work of ids, like Esc);",
-      "archive and restore (hide ids from the sidebar, or show them again; a busy agent cannot be archived);",
-      "mark_read and mark_unread.",
-      "An answer that you got from wait or read does not come to you again as a message.",
+      "list (scope: subagents (default), project, all, archived);",
+      "search (the messages of all agents, also archived, that match query; scope project: this project only; use it before work that may be done already);",
+      "read (the last messages of id; last (default 6), include_tools; entry: the messages around a search hit);",
+      "wait (until no agent of ids works, or with any: until one has an answer you have not seen; returns their answers);",
+      "send (message to id: your subagent, your parent, or another agent. mode followUp (default): after its current work; steer: into its current work at its next tool call, and you cannot take it back. With wait, the result is its answer; else its answer comes to you as a message. add and remove change your subagent's tools, e.g. add ['ask_user'] answers a request for a tool. A message to your parent always goes into its follow-up queue);",
+      "queue (the messages that wait in the follow-up queue of id, with item IDs: all for your subagents, else only yours);",
+      "unsend (take item out of the queue of id before the agent gets it: any item of your subagents, else only yours);",
+      "stop (stop the current work of ids, like Esc); archive, restore (hide or show ids in the sidebar; not a busy agent); mark_read, mark_unread.",
+      "An answer that wait or read gave you does not come again as a message.",
     ].join(" "),
     parameters: Type.Object({
       action: StringEnum(AGENT_ACTIONS),
@@ -2290,7 +2285,7 @@ export function createAgentsExtension(host: HostBridge) {
       ids: Type.Optional(
         Type.Array(
           Type.String({
-            description: "Agent IDs; workbox:s12 is an agent on workbox",
+            description: "Agent IDs; workbox:s12 is on machine workbox",
           })
         )
       ),
@@ -2310,8 +2305,7 @@ export function createAgentsExtension(host: HostBridge) {
       ),
       item: Type.Optional(
         Type.String({
-          description:
-            "unsend: an item ID from the queue action, for example pending:12",
+          description: "unsend: item ID from queue, e.g. pending:12",
         })
       ),
       timeout: Type.Optional(

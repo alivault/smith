@@ -209,35 +209,26 @@ export function createScheduleExtension(host: HostBridge) {
   const scheduleTool = defineTool({
     name: "schedule",
     description: [
-      "A durable timer that sends you `message` later, also after a server restart. When it fires, the message starts a new turn, or arrives at your next turn boundary when you work.",
-      "action create (default): give one of in (a duration such as 20m or 1h30m), at (an ISO time), every (repeat, at least 10s), or cron (5 fields, with optional timezone). A repeating timer runs again from the time it fired, so it does not catch up missed runs. max_runs ends a repeat.",
-      "action list: your timers. action cancel: cancel timer `id`.",
-      "Use it to come back to something at a time (a reminder, a daily check). To wait for a condition (CI, a deploy, a published version, a file), use the watch tool, not a timer, and never sleep or poll in bash.",
-      "Until a timer fires, you show as waiting, not done, so end your turn after you set it.",
+      "A durable timer: sends you `message` later, also after a restart. The message starts a new turn, or comes at your next turn boundary.",
+      "create (default) needs one of: in (a duration, e.g. 1h30m), at (an ISO time), every (a repeat, at least 10s), cron (5 fields; timezone). A repeat does not catch up missed runs; max_runs ends it. list: your timers. cancel: timer id.",
+      "For a reminder or a check at a time. To wait for a condition (CI, a deploy, a file), use watch.",
+      "Until it fires, you show as waiting: end your turn after you set it.",
     ].join(" "),
     parameters: Type.Object({
       action: Type.Optional(StringEnum(["create", "list", "cancel"])),
       message: Type.Optional(
         Type.String({ description: "create: what you get when it fires" })
       ),
-      in: Type.Optional(
-        Type.String({ description: "A duration from now, for example 10m" })
-      ),
+      in: Type.Optional(Type.String({ description: "Duration from now" })),
       at: Type.Optional(Type.String({ description: "An ISO time" })),
-      every: Type.Optional(
-        Type.String({ description: "Repeat at this interval, for example 2h" })
-      ),
-      cron: Type.Optional(
-        Type.String({ description: "A 5-field cron expression" })
-      ),
+      every: Type.Optional(Type.String({ description: "Repeat interval" })),
+      cron: Type.Optional(Type.String({ description: "5-field cron" })),
       timezone: Type.Optional(
-        Type.String({ description: "cron: an IANA time zone" })
+        Type.String({ description: "cron: IANA time zone" })
       ),
       max_runs: Type.Optional(Type.Number({ minimum: 1 })),
-      label: Type.Optional(
-        Type.String({ description: "A short name; default the message" })
-      ),
-      id: Type.Optional(Type.String({ description: "cancel: the timer id" })),
+      label: Type.Optional(Type.String({ description: "Short name" })),
+      id: Type.Optional(Type.String({ description: "cancel: timer id" })),
     }),
     replay: "safe",
     async execute(args, api, context) {

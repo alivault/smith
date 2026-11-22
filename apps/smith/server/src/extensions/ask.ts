@@ -248,9 +248,9 @@ const fieldSchema = Type.Object({
 const askTool = defineTool({
   name: "ask_user",
   description: [
-    "Ask the user a question and wait for the answer. The turn pauses until the user answers in the web client, also hours later and after a server restart.",
-    "Use it for every question to the user: a decision or information that you cannot find yourself, and also the offer at the end of a report ('Should I fix X?'). A question in plain text gives the user no buttons. Write your report first, then call ask_user as the last step. Do not use it for questions you can answer by reading the code.",
-    "Kinds: choice (one of options), multi (several of options), confirm (yes or no), text (free text), form (named fields).",
+    "Ask the user a question and wait for the answer, also for hours and across restarts.",
+    "Use it for every question to the user, also the offer at the end of a report ('Should I fix X?'): a question in plain text gives the user no buttons. Write the report first, then call ask_user last. Do not ask what you can find yourself.",
+    "Kinds: choice (one option), multi (several options), confirm (yes or no), text, form (fields).",
   ].join(" "),
   parameters: Type.Object({
     question: Type.String({ description: "The question, in markdown" }),
@@ -260,7 +260,7 @@ const askTool = defineTool({
     options: Type.Optional(Type.Array(optionSchema)),
     allow_other: Type.Optional(
       Type.Boolean({
-        description: "Let the user type an answer that is not an option",
+        description: "The user can also type another answer",
       })
     ),
     fields: Type.Optional(Type.Array(fieldSchema)),
