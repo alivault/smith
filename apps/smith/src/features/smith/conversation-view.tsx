@@ -2781,7 +2781,8 @@ function AgentNoticeBody({
  * The tail of a message bubble, as in Messages: a short point that leaves
  * the bottom edge and turns out below the bottom right corner. It fills the
  * corner, so the bubble and the tail are one shape. Its box is 24×18 px; the
- * bubble's bottom edge is at y=10.
+ * bubble's bottom edge is at y=10. It is traced for a round 22px corner, so
+ * the bubble keeps that radius (not a theme radius, which can scale).
  */
 function BubbleTail() {
   return (
@@ -2815,7 +2816,7 @@ function PromptMessageCard({
 
   return (
     <div className="mr-2 ml-auto w-fit max-w-[calc(100%-0.5rem)] sm:max-w-[80%]">
-      <div className="relative rounded-3xl bg-primary px-5 py-2.5 text-primary-foreground corner-round">
+      <div className="relative rounded-[22px] bg-primary px-5 py-2.5 text-primary-foreground corner-round">
         <BubbleTail />
         {labelText ? (
           <div className="mb-2 flex items-center gap-2">
