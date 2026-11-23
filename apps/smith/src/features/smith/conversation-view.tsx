@@ -2950,7 +2950,9 @@ function UserMessageFooter({
   if (!copyText.trim() && !canEdit) return null
 
   return (
-    <div className="mt-1 flex justify-end gap-1.5 text-xs font-medium text-muted-foreground">
+    // Left of the bubble's tail and close under the bubble, in the corner
+    // that the tail leaves free.
+    <div className="-mt-0.5 mr-5 flex justify-end gap-1 text-xs font-medium text-muted-foreground">
       {canEdit && entryId && editUserMessage ? (
         <TitleTooltip
           title={
