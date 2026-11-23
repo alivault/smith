@@ -51,6 +51,7 @@ import * as github from "./services/github.ts"
 import * as githubPrs from "./services/github-prs.ts"
 import * as prWrites from "./services/github-pr-writes.ts"
 import * as prActions from "./services/github-pr-actions.ts"
+import * as githubActions from "./services/github-actions.ts"
 import type { GitHubWatcher, WakeEvents } from "./services/github-watch.ts"
 import type { Notifier } from "./services/notify.ts"
 import {
@@ -281,6 +282,7 @@ export function createApi(api: ApiContext) {
         "github-pr-writes",
         "github-live",
         "github-pr-actions",
+        "github-actions",
       ],
     },
   }))
@@ -1161,6 +1163,7 @@ export function createApi(api: ApiContext) {
     removeReviewers?: unknown
     addLabels?: unknown
     removeLabels?: unknown
+    failedOnly?: unknown
   }
 
   const prBody = async (request: Request) => {
@@ -1399,6 +1402,51 @@ export function createApi(api: ApiContext) {
     const { body, cwd } = await prBody(request)
     const number = githubPrs.prNumber(body.number)
     await prActions.editPr(cwd, number, body)
+    await api.githubWatcher.changed(cwd)
+    return { ok: true, cwd }
+  })
+
+  // GitHub Actions workflow runs. A write tells all clients
+  // (`github_changed`).
+
+  router.get("/api/github/runs", async (request) => {
+    const cwd = await ghCwd(request, request.query.get("cwd"))
+    const runs = await githubActions.listRuns(cwd, {
+      branch: request.query.get("branch") ?? undefined,
+      limit: queryNumber(request, "limit"),
+    })
+    return { ok: true, cwd, runs }
+  })
+
+  router.get("/api/github/runs/:id", async (request) => {
+    const cwd = await ghCwd(request, request.query.get("cwd"))
+    const id = githubActions.runId(request.params.id)
+    return { ok: true, cwd, run: await githubActions.viewRun(cwd, id) }
+  })
+
+  router.get("/api/github/runs/:id/log", async (request) => {
+    const cwd = await ghCwd(request, request.query.get("cwd"))
+    const id = githubActions.runId(request.params.id)
+    const job = githubActions.runId(request.query.get("job"), "job ID")
+    return { ok: true, cwd, check: await githubActions.jobLog(cwd, id, job) }
+  })
+
+  router.post("/api/github/runs/:id/rerun", async (request) => {
+    const { body, cwd } = await prBody(request)
+    const id = githubActions.runId(request.params.id)
+    const failedOnly =
+      body.failedOnly === undefined
+        ? false
+        : flag(body.failedOnly, "failedOnly")
+    await githubActions.rerunRun(cwd, id, failedOnly)
+    await api.githubWatcher.changed(cwd)
+    return { ok: true, cwd }
+  })
+
+  router.post("/api/github/runs/:id/cancel", async (request) => {
+    const { cwd } = await prBody(request)
+    const id = githubActions.runId(request.params.id)
+    await githubActions.cancelRun(cwd, id)
     await api.githubWatcher.changed(cwd)
     return { ok: true, cwd }
   })
