@@ -9,6 +9,7 @@ import type { Message } from "@earendil-works/pi-ai"
 import type { Harness } from "@earendil-works/pi-durable"
 
 import { queuedItems, recordQueueOrigin } from "../src/core/queue.ts"
+import { sandboxAvailable } from "../src/core/sandbox.ts"
 import { DEFAULT_SETTINGS } from "../src/core/settings.ts"
 import {
   HostBridge,
@@ -607,6 +608,91 @@ void test("spawn_subagent with wait returns the answer, and agents read reads it
   } finally {
     await harness.close(ctx)
   }
+})
+
+/** Run spawn_subagent one time with `args`; returns its result text. */
+async function spawnOnce(args: Record<string, unknown>) {
+  const dir = await tempDir()
+  const host = new HostBridge()
+  const script: Script = (messages) => {
+    const user = lastUser(messages)
+    if (!user.startsWith("go")) return { text: "Done." }
+    const result = lastToolResult(messages)
+    if (result) return { text: "ok" }
+    return { tools: [{ name: "spawn_subagent", arguments: args }] }
+  }
+  const harness = await openHarness(
+    join(dir, "db.sqlite"),
+    [createAgentsExtension(host)],
+    script,
+    dir
+  )
+  const fake = bind(host, harness, dir)
+  try {
+    const parent = await fake.agents.create(dir)
+    const conversation = (await harness.conversation(
+      conversationOf(parent),
+      ctx
+    ))!
+    await (
+      await conversation.submit({ type: "input", content: "go" }, ctx)
+    ).wait(ctx)
+    const view = await conversation.context(ctx)
+    const result = view.entries.find((entry) => entry.kind === "pi.tool-result")
+    return {
+      text: JSON.stringify(result?.model),
+      subagents: fake.agents.subagents(parent),
+    }
+  } finally {
+    await harness.close(ctx)
+  }
+}
+
+void test("spawn_subagent refuses a goal that changes files with a profile that cannot", async () => {
+  const refused = await spawnOnce({
+    goal: "Fix the bug in src/core/app.ts, then commit and push.",
+    profile: "reviewer",
+  })
+  assert.equal(refused.subagents.length, 0)
+  assert.match(refused.text, /The goal asks to change files/)
+  assert.match(refused.text, /profile: \\"builder\\"/)
+  assert.match(refused.text, /force: true/)
+  // A review goal starts, when this machine has the sandbox.
+  const review = await spawnOnce({
+    goal: "Review the last commit. Do not change files or commit.",
+    profile: "read-only",
+    wait: true,
+  })
+  if (!(await sandboxAvailable())) {
+    assert.equal(review.subagents.length, 0)
+    assert.match(review.text, /this machine has none/)
+    return
+  }
+  assert.equal(review.subagents.length, 1)
+  assert.match(
+    review.text,
+    /No: write, edit; bash is sandboxed \(read-only, no network\)/
+  )
+})
+
+void test("spawn_subagent with force or the added tools starts the subagent", async () => {
+  const forced = await spawnOnce({
+    goal: "Commit the notes.",
+    profile: "researcher",
+    force: true,
+  })
+  assert.equal(forced.subagents.length, 1)
+  assert.match(
+    forced.text,
+    /No: write, edit; bash is sandboxed \(read-only, with network\)/
+  )
+  const added = await spawnOnce({
+    goal: "Commit the notes.",
+    profile: "reviewer",
+    add: ["write", "edit", "bash"],
+  })
+  assert.equal(added.subagents.length, 1)
+  assert.doesNotMatch(added.text, /No:|sandboxed/)
 })
 
 void test("a worktree is made outside the repository and removed when clean", async () => {

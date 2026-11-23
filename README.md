@@ -139,15 +139,18 @@ pnpm start import-pi         # import Pi sessions as agents (stop Smith first)
   report their exit, terminals, subagents in git worktrees, browser
   automation, code mode, web access, and MCP.
 - **Tool profiles.** `full`, `builder`, `researcher`, `reviewer`,
-  `read-only`, or your own. In `reviewer` and `read-only`, bash runs in a
-  bubblewrap sandbox (Linux): the filesystem is read-only and there is no
-  network, so the agent cannot change files with a script.
+  `read-only`, or your own. In `reviewer`, `read-only`, and `researcher`,
+  bash runs in a sandbox (bubblewrap on Linux, Seatbelt on macOS): the
+  filesystem is read-only, so the agent cannot change files with a script.
+  Only `researcher` has the network.
 - **Safe subagents.** A subagent gets a tool profile from its parent. It has
   no `ask_user` or `spawn_subagent` unless the parent grants them, and its
   bash refuses `git push` to main, `sudo`, and the commands that the parent
-  lists. Each message from a subagent is a question, done, or waiting (its
-  turn ended on a job). Questions and done go into the parent's follow-up
-  queue; waiting shows only in the `agents` list action.
+  lists. Smith refuses to start a subagent whose goal changes files or
+  commits when its profile cannot. Each message from a subagent is a
+  question, done, or waiting (its turn ended on a job). Questions and done
+  go into the parent's follow-up queue; waiting shows only in the `agents`
+  list action.
 - **Notifications.** Web Push and ntfy when a turn finishes or the agent asks
   a question.
 - **Search across agents.** The agents dialog also finds messages: the text

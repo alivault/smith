@@ -64,7 +64,17 @@ import {
   type HostBridge,
   type HostServices,
 } from "./host.ts"
-import { allProfiles, findProfile, nameList } from "../core/profiles.ts"
+import {
+  allProfiles,
+  findProfile,
+  missingToolsText,
+  nameList,
+  PROFILE_GUIDE,
+  spawnRefusal,
+  toolAccess,
+  type ToolLimits,
+} from "../core/profiles.ts"
+import { sandboxAvailable } from "../core/sandbox.ts"
 import { JobsDoc } from "./jobs.ts"
 import { TimersDoc } from "./timers.ts"
 import { waitingLabel } from "./waiting.ts"
@@ -932,7 +942,8 @@ export function createAgentsExtension(host: HostBridge) {
       "Start a subagent: a full agent with its own context that works on `goal`. Write goal as a complete brief: the subagent does not see this conversation. Use it to split independent work or for a fresh review.",
       "It works in the background: its messages (done or a question) come in your follow-up queue after your turn, so keep working. Set wait to get its answer as the result. A subagent that waits on a timer, a watch, or a job sends nothing until it is done or asks.",
       "Without worktree, it works in your directory on the same files. worktree: true gives it its own git branch and worktree, for parallel edits.",
-      "profile: builder, researcher, reviewer, read-only, or full (default). It has no ask_user or spawn_subagent unless you add them. Its bash refuses git push to main, sudo, and deny_commands.",
+      PROFILE_GUIDE,
+      "It has no ask_user or spawn_subagent unless you add them. Its bash refuses git push to main, sudo, and deny_commands. Smith refuses a goal that changes files with a profile that cannot; force: true skips this check.",
     ].join(" "),
     parameters: Type.Object({
       goal: Type.String(),
@@ -976,6 +987,9 @@ export function createAgentsExtension(host: HostBridge) {
           description: "With wait: give up after this many seconds",
         })
       ),
+      force: Type.Optional(
+        Type.Boolean({ description: "Skip the goal and tools check" })
+      ),
       machine: MACHINE_PARAMETER,
     }),
     replay: "safe",
@@ -992,6 +1006,19 @@ export function createAgentsExtension(host: HostBridge) {
             "worktree is not available for an agent on another machine."
           )
         const { connection } = remote.target
+        const remoteProfile = args.profile
+          ? findProfile(args.profile, services.settings().profiles)
+          : undefined
+        // The sandbox of the other machine is checked there, when bash runs.
+        const refusal =
+          !args.force && remoteProfile
+            ? spawnRefusal({
+                goal: args.goal,
+                profile: remoteProfile,
+                sandbox: true,
+              })
+            : undefined
+        if (refusal) return errorResult(refusal)
         let created: RemoteAgent
         try {
           created = (await connection.request(
@@ -1082,8 +1109,16 @@ export function createAgentsExtension(host: HostBridge) {
         .find(
           (agent) => services.agents.meta(agent.id).spawnedByCall === api.callId
         )?.id
+      const profile = findProfile(args.profile, settings.profiles)
+      const limits: ToolLimits = {
+        ...(nameList(args.add) ? { add: nameList(args.add) } : {}),
+        ...(nameList(args.remove) ? { remove: nameList(args.remove) } : {}),
+        ...(nameList(args.deny_commands)
+          ? { denyCommands: nameList(args.deny_commands) }
+          : {}),
+      }
       if (!subagent) {
-        if (args.profile && !findProfile(args.profile, settings.profiles))
+        if (args.profile && !profile)
           return errorResult(
             `Unknown profile: ${args.profile}. Profiles: ${allProfiles(
               settings.profiles
@@ -1091,6 +1126,15 @@ export function createAgentsExtension(host: HostBridge) {
               .map((profile) => profile.name)
               .join(", ")}.`
           )
+        if (!args.force) {
+          const refusal = spawnRefusal({
+            goal: args.goal,
+            profile,
+            limits,
+            sandbox: profile?.bash ? await sandboxAvailable() : true,
+          })
+          if (refusal) return errorResult(refusal)
+        }
         if ((parentMeta.depth ?? 0) >= settings.maxSubagentDepth)
           return errorResult(
             `Subagents may nest only ${settings.maxSubagentDepth} levels deep.`
@@ -1161,22 +1205,8 @@ export function createAgentsExtension(host: HostBridge) {
             spawnedByCall: api.callId,
             ...(model ? { model } : {}),
             ...(args.thinking ? { thinkingLevel: args.thinking } : {}),
-            ...(args.profile
-              ? {
-                  profile:
-                    findProfile(args.profile, settings.profiles)?.name ??
-                    args.profile,
-                }
-              : {}),
-            limits: {
-              ...(nameList(args.add) ? { add: nameList(args.add) } : {}),
-              ...(nameList(args.remove)
-                ? { remove: nameList(args.remove) }
-                : {}),
-              ...(nameList(args.deny_commands)
-                ? { denyCommands: nameList(args.deny_commands) }
-                : {}),
-            },
+            ...(args.profile ? { profile: profile?.name ?? args.profile } : {}),
+            limits,
             ...(args.name ? { name: args.name } : {}),
             ...(group ? { group } : {}),
             ...(worktree
@@ -1208,6 +1238,10 @@ export function createAgentsExtension(host: HostBridge) {
       const where = meta.worktree
         ? `in worktree ${meta.worktree.path} (branch ${meta.worktree.branch})`
         : `in ${meta.cwd}`
+      const missing = missingToolsText(
+        toolAccess(findProfile(meta.profile, settings.profiles), meta.limits)
+      )
+      const cannot = missing ? ` ${missing}.` : ""
       if (!args.wait) {
         await scheduleReport(
           api,
@@ -1221,7 +1255,7 @@ export function createAgentsExtension(host: HostBridge) {
           context
         )
         return textResult(
-          `Started subagent ${subagent} ${where}. Its answer comes to you as a message when it finishes. Use agents (read, wait, stop, send) with id ${subagent}.`,
+          `Started subagent ${subagent} ${where}.${cannot} Its answer comes to you as a message when it finishes. Use agents (read, wait, stop, send) with id ${subagent}.`,
           {
             details: json({
               agentId: subagent,
@@ -1251,7 +1285,7 @@ export function createAgentsExtension(host: HostBridge) {
       const answer = found?.text
       return textResult(
         finished
-          ? `Subagent ${subagent} (${where}) finished.\nIts answer:\n${clip(answer ?? "(no answer)", 20_000)}`
+          ? `Subagent ${subagent} (${where}) finished.${cannot}\nIts answer:\n${clip(answer ?? "(no answer)", 20_000)}`
           : `Subagent ${subagent} still works after ${args.timeout}s. Check it later with agents read or wait.`,
         {
           details: json({

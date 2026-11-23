@@ -16,6 +16,7 @@ import type { ServerResponse } from "node:http"
 import { hostname } from "node:os"
 
 import { VERSION } from "../config.ts"
+import { PROFILE_GUIDE } from "../core/profiles.ts"
 import { normalizeAgentId } from "../extensions/agents.ts"
 import { HANDLED, sendJson, type Router } from "../http.ts"
 import type { MachineManager } from "../machines/manager.ts"
@@ -139,8 +140,7 @@ const TOOLS = [
         },
         profile: {
           type: "string",
-          description:
-            "Tools profile: builder, researcher, reviewer, read-only, full (default), or a profile of the user",
+          description: `Tools profile, or a profile of the user. ${PROFILE_GUIDE}`,
         },
         worktree: {
           type: "boolean",
