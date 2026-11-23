@@ -460,7 +460,7 @@ export class Updater {
    */
   install(version?: string) {
     if (version !== undefined && !isVersion(version))
-      throw new Error(`Not a version: ${version}`)
+      throw new Error(`Not a version: ${String(version)}`)
     if (this.#install.kind !== "npm")
       throw new Error(
         this.#install.kind === "source"
