@@ -1741,16 +1741,20 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
         ) : null}
       </CollapsibleTrigger>
 
-      <ProjectCounts
-        project={project}
-        counts={statusCounts}
-        activeFilter={statusFilter}
-        disabled={overlay}
-        onToggle={(filter) => {
-          collapsedProjectStore.setCollapsed(project, false)
-          toggleProjectStatusFilter(filter)
-        }}
-      />
+      {/* An open project shows its agents; the counts summarize a closed
+          one. They stay while a filter is on, so it can be turned off. */}
+      {collapsed || statusFilter?.length ? (
+        <ProjectCounts
+          project={project}
+          counts={statusCounts}
+          activeFilter={statusFilter}
+          disabled={overlay}
+          onToggle={(filter) => {
+            collapsedProjectStore.setCollapsed(project, false)
+            toggleProjectStatusFilter(filter)
+          }}
+        />
+      ) : null}
 
       {archivedJobAgents > 0 && onOpenArchivedJobs && !overlay ? (
         <TitleTooltip
@@ -2108,19 +2112,21 @@ function PinnedAgentGroup({
               )
             ) : null}
           </CollapsibleTrigger>
-          <ProjectCounts
-            project="Pinned"
-            counts={statusCounts}
-            activeFilter={statusFilter}
-            disabled={false}
-            onToggle={(filter) => {
-              collapsedProjectStore.setCollapsed(
-                PINNED_AGENT_GROUP_COLLAPSE_KEY,
-                false
-              )
-              togglePinnedStatusFilter(filter)
-            }}
-          />
+          {collapsed || statusFilter?.length ? (
+            <ProjectCounts
+              project="Pinned"
+              counts={statusCounts}
+              activeFilter={statusFilter}
+              disabled={false}
+              onToggle={(filter) => {
+                collapsedProjectStore.setCollapsed(
+                  PINNED_AGENT_GROUP_COLLAPSE_KEY,
+                  false
+                )
+                togglePinnedStatusFilter(filter)
+              }}
+            />
+          ) : null}
         </div>
         <CollapsibleContent>
           <SidebarGroupContent>
