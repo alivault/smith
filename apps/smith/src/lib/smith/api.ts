@@ -210,6 +210,21 @@ export type GitChangesResponse =
     }
   | ApiErrorResponse
 
+export type GitCommitSearchMode = "message" | "code" | "author" | "file"
+
+export type GitCommitsSearchResponse =
+  | {
+      ok: true
+      cwd: string
+      mode: GitCommitSearchMode
+      query: string
+      commits: Array<string> | null
+      commitsHasMore: boolean
+      commitsLimit: number
+      unpushedCommitHashes: Array<string> | null
+    }
+  | ApiErrorResponse
+
 export type GhLabel = { name: string; color: string; description?: string }
 
 export type GhRepo =

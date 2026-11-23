@@ -9,6 +9,8 @@ import type {
   GitChangeFile,
   GitChangesResponse,
   GitCommitMessageResponse,
+  GitCommitSearchMode,
+  GitCommitsSearchResponse,
   GitFileDiffResponse,
   GitFileReviewResponse,
   GitLocalBranch,
@@ -19,6 +21,10 @@ export type GitStatusData = Extract<GitStatusResponse, { ok: true }>
 export type GitChangesData = Extract<GitChangesResponse, { ok: true }>
 export type GitCommitMessageData = Extract<
   GitCommitMessageResponse,
+  { ok: true }
+>
+export type GitCommitsSearchData = Extract<
+  GitCommitsSearchResponse,
   { ok: true }
 >
 export type GitFileDiffData = Extract<GitFileDiffResponse, { ok: true }>
@@ -97,6 +103,47 @@ export function gitChangesQueryOptions({
       ),
     staleTime: GIT_QUERY_STALE_TIME_MS,
     gcTime: GIT_QUERY_GC_TIME_MS,
+  }
+}
+
+export function gitCommitsSearchQueryOptions({
+  machineId,
+  viewerContextId,
+  cwd,
+  mode,
+  query,
+  limit,
+}: {
+  machineId: string
+  viewerContextId: string
+  cwd: string
+  mode: GitCommitSearchMode
+  query: string
+  limit: number
+}) {
+  return {
+    queryKey: smithQueryKeys.gitCommitsSearch(
+      viewerContextId,
+      cwd,
+      mode,
+      query,
+      limit
+    ),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      fetchJson<GitCommitsSearchData>(
+        buildRequestUrl(
+          `/api/git-commits-search?cwd=${encodeURIComponent(cwd)}&mode=${mode}&q=${encodeURIComponent(
+            query
+          )}&limit=${limit}`,
+          { machineId, contextId: viewerContextId }
+        ),
+        { signal }
+      ),
+    staleTime: GIT_QUERY_STALE_TIME_MS,
+    gcTime: GIT_QUERY_GC_TIME_MS,
+    // A bad query (for example a path outside the repository) does not get
+    // better on a retry.
+    retry: false,
   }
 }
 

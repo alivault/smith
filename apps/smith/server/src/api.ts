@@ -249,6 +249,7 @@ export function createApi(api: ApiContext) {
         "project-files",
         "git-status",
         "git-history",
+        "git-history-search",
         "git-mutations",
         "git-watch",
         "native-pty",
@@ -1718,6 +1719,21 @@ export function createApi(api: ApiContext) {
       : "all"
     const limit = queryNumber(request, "commitsLimit")
     return { ok: true, cwd, ...(await git.changes(cwd, scope, limit)) }
+  })
+
+  // Search the history of HEAD: `mode` is message (default), code, author, or
+  // file; `q` is the text or the path. The rows and `commitsHasMore` are the
+  // same as in `/api/git-changes`.
+  router.get("/api/git-commits-search", async (request) => {
+    const mode = git.commitSearchMode(request.query.get("mode"))
+    const query = request.query.get("q")
+    const limit = queryNumber(request, "limit")
+    const cwd = await gitCwd(request, request.query.get("cwd"))
+    return {
+      ok: true,
+      cwd,
+      ...(await git.searchCommits(cwd, mode, query, limit)),
+    }
   })
 
   router.get("/api/git-diff", async (request) => {
