@@ -92,6 +92,10 @@ export function useSmithTheme() {
     if (appliedThemeMode) {
       document.documentElement.dataset.smithThemeMode = appliedThemeMode
     }
+    // The iPhone status bar (and Safari's tab bar) take their color from
+    // theme-color. Use the page background of the theme that now applies.
+    const frame = window.requestAnimationFrame(syncThemeColorMeta)
+    return () => window.cancelAnimationFrame(frame)
   }, [appliedTheme, setTheme])
 
   /** Shows a theme without saving it, for example while a picker is open. */
@@ -137,4 +141,40 @@ export function useSmithTheme() {
     systemTheme,
     themeFamily,
   }
+}
+
+/** Set `<meta name="theme-color">` to the page background, one tag only. */
+function syncThemeColorMeta() {
+  const color = toHexColor(getComputedStyle(document.body).backgroundColor)
+  if (!color) return
+  const tags = document.head.querySelectorAll<HTMLMetaElement>(
+    'meta[name="theme-color"]'
+  )
+  // The tags of index.html follow the system scheme until the app runs.
+  tags.forEach((tag, index) => {
+    if (index > 0) tag.remove()
+  })
+  const tag =
+    tags[0] ?? document.head.appendChild(document.createElement("meta"))
+  tag.name = "theme-color"
+  tag.removeAttribute("media")
+  tag.content = color
+}
+
+/**
+ * A CSS color as `#rrggbb`. The themes use oklch(), and a plain hex color is
+ * safe for every browser's theme-color.
+ */
+function toHexColor(color: string) {
+  if (!color || color === "transparent" || color === "rgba(0, 0, 0, 0)")
+    return undefined
+  const canvas = document.createElement("canvas")
+  canvas.width = 1
+  canvas.height = 1
+  const context = canvas.getContext("2d")
+  if (!context) return color
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+  return `#${[red, green, blue].map((value) => value.toString(16).padStart(2, "0")).join("")}`
 }
