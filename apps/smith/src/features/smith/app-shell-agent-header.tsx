@@ -7,6 +7,7 @@ import {
 import {
   EllipsisIcon,
   PanelRightIcon,
+  PencilIcon,
   SquarePenIcon,
   SquareTerminalIcon,
 } from "lucide-react"
@@ -178,12 +179,29 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
           </Button>
         </TitleTooltip>
         <div className="ml-1 flex min-w-0 flex-1 flex-col items-start justify-center gap-0 text-left">
-          <div className="flex max-w-full min-w-0 items-center gap-1.5">
+          <div className="group/title flex max-w-full min-w-0 items-center gap-1">
             <TitleTooltip title={displayAgentTitle} onlyWhenTruncated>
               <h2 className="min-w-0 truncate text-[13px] leading-tight font-semibold">
                 {displayAgentTitle}
               </h2>
             </TitleTooltip>
+            {agentHeaderState.agentHasFile ? (
+              <TitleTooltip
+                title={`Rename agent (${formatShortcutLabel(appShortcut("E"))})`}
+              >
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Rename agent"
+                  className="-my-1 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 [&_svg:not([class*='size-'])]:size-3"
+                  onClick={() => {
+                    actionsRef.current.onRenameAgent()
+                  }}
+                >
+                  <PencilIcon />
+                </Button>
+              </TitleTooltip>
+            ) : null}
           </div>
           <div className="flex max-w-full min-w-0 items-center gap-x-1">
             {locationLabel ? (
