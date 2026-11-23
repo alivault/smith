@@ -555,6 +555,7 @@ function useFileReviewContentView({
   > = (value) => {
     dispatch({ type: "stickyReviewFileValueChanged", value })
   }
+  const [historyMeta, setHistoryMeta] = React.useState("")
   const setHistoryHeaderShadowed: React.Dispatch<
     React.SetStateAction<boolean>
   > = (value) => {
@@ -1034,6 +1035,11 @@ function useFileReviewContentView({
                 <span className="text-xs font-bold tracking-[0.04em] text-muted-foreground uppercase">
                   History
                 </span>
+                {historyMeta ? (
+                  <span className="ml-3 min-w-0 truncate text-xs text-muted-foreground/80">
+                    {historyMeta}
+                  </span>
+                ) : null}
               </span>
               {historyOpen ? (
                 <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -1069,6 +1075,7 @@ function useFileReviewContentView({
                 cwd={normalizedCwd}
                 active={active && historyOpen}
                 embedded
+                onMetaChange={setHistoryMeta}
                 onOpenCommitDiff={onOpenCommitDiff}
               />
             </div>

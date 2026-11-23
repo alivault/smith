@@ -2151,11 +2151,14 @@ export function GitCommitsSection({
   onRestoreEmbedded,
   embedded = false,
   flush = false,
+  onMetaChange,
 }: GitScopedProps & {
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
   onRestoreEmbedded?: () => void
   embedded?: boolean
   flush?: boolean
+  /** The count text, for a header outside the section. */
+  onMetaChange?: (meta: string) => void
 }) {
   const machineId = useMachineId()
   const normalizedCwd = normalizeCwd(cwd)
@@ -2252,7 +2255,18 @@ export function GitCommitsSection({
     ? searchQuery.isFetching
     : commitsQuery.isFetching
   const listLines = searching ? searchLines : commits
-  const meta = Array.isArray(listLines) ? gitCommitsSummaryText(listLines) : ""
+  const listTotal = searching
+    ? searchStale
+      ? undefined
+      : searchData?.commitsTotal
+    : commitsData?.commitsTotal
+  const meta =
+    Array.isArray(listLines) && !(searching && searchStale)
+      ? gitCommitsSummaryText(listLines, listTotal, searching)
+      : ""
+  React.useEffect(() => {
+    onMetaChange?.(meta)
+  }, [meta, onMetaChange])
   const unpushedCommitHashes = new Set(
     (searching ? searchData : commitsData)?.unpushedCommitHashes ?? []
   )

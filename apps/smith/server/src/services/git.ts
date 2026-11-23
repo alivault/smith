@@ -310,8 +310,20 @@ async function commits(cwd: string, limit: number) {
   return {
     commits: lines.slice(0, limit),
     hasMore,
+    total: hasMore ? await commitCount(cwd) : lines.length,
     unpushed: await unpushedCommits(cwd),
   }
+}
+
+/** The number of commits in the history of HEAD. Null when git fails. */
+async function commitCount(cwd: string) {
+  const output = await gitAllowFailure(
+    cwd,
+    ["rev-list", "--count", "HEAD"],
+    15_000
+  )
+  const count = Number.parseInt(output.stdout.trim(), 10)
+  return Number.isFinite(count) ? count : null
 }
 
 export const COMMIT_SEARCH_MODES = [
@@ -394,6 +406,7 @@ export async function searchCommits(
     query,
     commits: null,
     commitsHasMore: false,
+    commitsTotal: null as number | null,
     commitsLimit: 0,
     unpushedCommitHashes: null,
   }
@@ -409,6 +422,7 @@ export async function searchCommits(
         return {
           ...empty,
           commits: [],
+          commitsTotal: 0,
           commitsLimit: limit,
           unpushedCommitHashes: [],
         }
@@ -431,11 +445,34 @@ export async function searchCommits(
         15_000
       )
       const lines = output.stdout.split("\n").filter(Boolean)
+      const hasMore = lines.length > limit
+      // All the matches, for the count. Only when the page does not have
+      // them all.
+      const total = hasMore
+        ? await gitAllowFailure(
+            cwd,
+            [
+              "--literal-pathspecs",
+              "log",
+              "--pretty=format:%h",
+              ...options,
+              "HEAD",
+              "--",
+              ...paths,
+            ],
+            15_000
+          ).then((all) => {
+            // A failed or cut-off count is less than this page: no count.
+            const count = all.stdout.split("\n").filter(Boolean).length
+            return count > limit ? count : null
+          })
+        : lines.length
       return {
         mode,
         query,
         commits: lines.slice(0, limit),
-        commitsHasMore: lines.length > limit,
+        commitsHasMore: hasMore,
+        commitsTotal: total,
         commitsLimit: limit,
         unpushedCommitHashes: await unpushedCommits(cwd),
       }
@@ -454,6 +491,7 @@ export async function changes(
     remoteBranches: null,
     commits: null,
     commitsHasMore: false,
+    commitsTotal: null as number | null,
     commitsLimit: 0,
     unpushedCommitHashes: null,
   }
@@ -473,13 +511,14 @@ export async function changes(
         : { localBranches: [], remoteBranches: [] }
       const history = wantCommits
         ? await commits(cwd, limit)
-        : { commits: [], hasMore: false, unpushed: [] }
+        : { commits: [], hasMore: false, total: null, unpushed: [] }
       return {
         files: changedFiles,
         localBranches: branchLists.localBranches,
         remoteBranches: branchLists.remoteBranches,
         commits: history.commits,
         commitsHasMore: history.hasMore,
+        commitsTotal: history.total,
         commitsLimit: wantCommits ? limit : 0,
         unpushedCommitHashes: history.unpushed,
       }

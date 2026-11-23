@@ -205,6 +205,8 @@ export type GitChangesResponse =
       remoteBranches: Array<GitRemoteBranch> | null
       commits: Array<string> | null
       commitsHasMore: boolean
+      /** All the commits (or matches). Null when git could not count. */
+      commitsTotal?: number | null
       commitsLimit: number
       unpushedCommitHashes: Array<string> | null
     }
@@ -220,6 +222,8 @@ export type GitCommitsSearchResponse =
       query: string
       commits: Array<string> | null
       commitsHasMore: boolean
+      /** All the commits (or matches). Null when git could not count. */
+      commitsTotal?: number | null
       commitsLimit: number
       unpushedCommitHashes: Array<string> | null
     }

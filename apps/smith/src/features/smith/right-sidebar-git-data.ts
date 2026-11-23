@@ -506,9 +506,16 @@ function gitCommitEntryCount(commits: Array<string>) {
   )
 }
 
-export function gitCommitsSummaryText(commits: Array<string>) {
-  const count = gitCommitEntryCount(commits)
-  return count > 0 ? `${count} commit${count === 1 ? "" : "s"}` : ""
+export function gitCommitsSummaryText(
+  commits: Array<string>,
+  total?: number | null,
+  searching = false
+) {
+  const count = total ?? gitCommitEntryCount(commits)
+  const noun = searching ? "match" : "commit"
+  const plural = searching ? "matches" : "commits"
+  if (count <= 0) return ""
+  return `${count.toLocaleString()} ${count === 1 ? noun : plural}`
 }
 
 const GIT_COMMIT_FIELD_SEPARATOR = "\u001f"

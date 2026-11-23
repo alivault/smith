@@ -103,9 +103,13 @@ void test("git search keeps the limit and tells when there are more", async () =
   assert.equal(first.commits?.length, 2)
   assert.equal(first.commitsLimit, 2)
   assert.equal(first.commitsHasMore, true)
+  assert.equal(first.commitsTotal, 5)
   const all = await git.searchCommits(cwd, "author", "a", 50)
   assert.equal(all.commits?.length, 5)
   assert.equal(all.commitsHasMore, false)
+  assert.equal(all.commitsTotal, 5)
+  const changes = await git.changes(cwd, "commits", 2)
+  assert.equal(changes.commitsTotal, 5)
 })
 
 void test("git search treats text that starts with a dash as text", async () => {
