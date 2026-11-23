@@ -42,6 +42,8 @@ type AppShellCommandPaletteProps = {
   onOpenChange: (open: boolean) => void
   commands: Array<AppCommand>
   onCommandError?: (error: unknown) => void
+  /** A command changed a setting: read the commands again. */
+  onCommandsStale?: () => void
 }
 
 export type AppShellCommandPaletteHandle = {
@@ -71,6 +73,7 @@ function AppShellCommandPalette({
   onOpenChange,
   commands,
   onCommandError,
+  onCommandsStale,
 }: AppShellCommandPaletteProps) {
   const [query, setQuery] = React.useState("")
   const isMobile = useIsMobile()
@@ -85,32 +88,21 @@ function AppShellCommandPalette({
   }
   const commandGroups = Array.from(groups.entries())
 
-  // The commands are read when the palette opens, so the palette keeps the
-  // switches that changed since then.
-  const [flipped, setFlipped] = React.useState<ReadonlySet<string>>(new Set())
-
   React.useEffect(() => {
     if (!open && query) {
       setQuery("")
     }
-    if (!open) setFlipped(new Set())
   }, [open, query])
-
-  const isOn = (command: AppCommand) =>
-    command.toggled === undefined
-      ? undefined
-      : command.toggled !== flipped.has(command.id)
 
   const handleSelect = (command: AppCommand) => {
     if (command.toggled !== undefined) {
-      setFlipped((current) => {
-        const next = new Set(current)
-        if (!next.delete(command.id)) next.add(command.id)
-        return next
-      })
-      void Promise.resolve(command.onSelect()).catch((error: unknown) => {
-        onCommandError?.(error)
-      })
+      // Keep the palette open and read the commands again, so the switch
+      // and the next choice use the new value.
+      void Promise.resolve(command.onSelect())
+        .then(() => requestAnimationFrame(() => onCommandsStale?.()))
+        .catch((error: unknown) => {
+          onCommandError?.(error)
+        })
       return
     }
     onOpenChange(false)
@@ -155,9 +147,9 @@ function AppShellCommandPalette({
                     className="flex shrink-0 items-center self-center pl-2"
                   >
                     <span className="sr-only">
-                      {isOn(command) ? "On" : "Off"}
+                      {command.toggled ? "On" : "Off"}
                     </span>
-                    <SwitchIndicator checked={Boolean(isOn(command))} />
+                    <SwitchIndicator checked={Boolean(command.toggled)} />
                   </span>
                 ) : command.valueLabel ? (
                   <CommandShortcut className="inline shrink-0 tracking-normal normal-case">
@@ -262,6 +254,9 @@ export function AppShellCommandPaletteController({
       open={open}
       onOpenChange={setOpenState}
       commands={open ? openedCommands : []}
+      onCommandsStale={() => {
+        if (openRef.current) setOpenedCommands(readCommands())
+      }}
       {...props}
     />
   )
