@@ -3806,7 +3806,6 @@ function useAppShellAgentWorkspaceView({
                 gitPanelOpen={gitPanelOpen}
                 terminalPanelOpen={terminalPanelOpen}
                 loadingDisplayAgentTitle={loadingDisplayAgentTitle}
-                contextUsageStore={contextUsageStore}
                 displaySettingsStore={displaySettingsStore}
                 isAgentViewLoading={isAgentViewLoading}
                 onToggleGitPanel={toggleGitPanel}

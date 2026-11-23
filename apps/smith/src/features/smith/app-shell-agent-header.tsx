@@ -1,6 +1,4 @@
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { smithQueryKeys } from "@/features/smith/query-keys"
 import { ProfileMenuSub } from "@/features/smith/agent/profiles"
 import {
   AgentLineage,
@@ -56,14 +54,7 @@ import {
   useMachines,
 } from "@/features/smith/machine-store"
 import { shortModelLabel, thinkingLabel } from "@/features/smith/model-label"
-import { emitSmithEvent } from "@/features/smith/agent/events"
 import { copyAgentId } from "@/features/smith/copy-agent-id"
-import {
-  ContextUsageQuotaDetails,
-  ContextUsageWindowDetails,
-  useContextUsageView,
-  type ComposerContextUsageStore,
-} from "@/features/smith/context-usage"
 import {
   machineHasBusyAgents,
   machineHasUnreadAgents,
@@ -93,7 +84,6 @@ type AppShellAgentHeaderProps = {
   gitPanelOpen: boolean
   terminalPanelOpen: boolean
   loadingDisplayAgentTitle: string
-  contextUsageStore: ComposerContextUsageStore
   displaySettingsStore: SmithStore<AppShellDisplaySettingsState>
   isAgentViewLoading: boolean
   onToggleGitPanel: () => void
@@ -110,7 +100,6 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
   gitPanelOpen,
   terminalPanelOpen,
   loadingDisplayAgentTitle,
-  contextUsageStore,
   displaySettingsStore,
   isAgentViewLoading,
   onToggleGitPanel,
@@ -140,15 +129,6 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
     { compare: shallowRecordEqual }
   )
   const machineReadOnly = useMachineReadOnly()
-  const queryClient = useQueryClient()
-  // The agent menu shows the usage details at its top.
-  const usageView = useContextUsageView({
-    activeAgentId: agentHeaderState.agentId,
-    contextUsageStore,
-    disabled: machineReadOnly,
-    modelProvider: agentHeaderState.modelProvider,
-    viewerContextId,
-  })
   const hideToolBlocks = useSelector(
     displaySettingsStore,
     (settings) => settings.hideToolBlocks
@@ -251,16 +231,7 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
           </div>
         </div>
         <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1">
-          <DropdownMenu
-            onOpenChange={(open) => {
-              // The session and weekly usage change with each request, so
-              // the menu gets them again when it opens.
-              if (open)
-                void queryClient.invalidateQueries({
-                  queryKey: smithQueryKeys.providerUsageAll(),
-                })
-            }}
-          >
+          <DropdownMenu>
             <TitleTooltip title="Agent menu">
               <DropdownMenuTrigger
                 render={
@@ -271,22 +242,6 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
               </DropdownMenuTrigger>
             </TitleTooltip>
             <DropdownMenuContent align="end" className="w-64">
-              {usageView ? (
-                <>
-                  <DropdownMenuItem
-                    className="block"
-                    onClick={() =>
-                      emitSmithEvent("smith:open-agent-settings", {
-                        page: "agent-context",
-                      })
-                    }
-                  >
-                    <ContextUsageWindowDetails view={usageView} />
-                  </DropdownMenuItem>
-                  <ContextUsageQuotaDetails view={usageView} />
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
               <DropdownMenuItem
                 disabled={machineReadOnly}
                 onClick={() => {
