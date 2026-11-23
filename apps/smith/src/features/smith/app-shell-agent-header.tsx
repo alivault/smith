@@ -16,13 +16,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
@@ -50,10 +45,8 @@ import { cn } from "@/lib/utils"
 import {
   useActiveMachine,
   useMachineFeature,
-  useMachineReadOnly,
   useMachines,
 } from "@/features/smith/machine-store"
-import { shortModelLabel, thinkingLabel } from "@/features/smith/model-label"
 import { copyAgentId } from "@/features/smith/copy-agent-id"
 import {
   machineHasBusyAgents,
@@ -66,12 +59,10 @@ export type AppShellAgentHeaderActions = {
   onDeleteCurrentAgent: (options?: { removeWorktree?: boolean }) => void
   onForkAgent: () => void | Promise<unknown>
   onOpenCommandPalette: () => void
-  onOpenModelDialog: () => void
   onOpenRightSidebarTab: (tab: "review" | "history") => void
   onOpenSettings: () => void
   onRenameAgent: () => void
   onRunCompact: () => void | Promise<unknown>
-  onSelectThinkingLevel: (level: string) => void | Promise<unknown>
   onToggleHideThinking: () => void | Promise<unknown>
   onToggleHideToolBlocks: () => void
   onTreeAgent: () => void | Promise<unknown>
@@ -121,14 +112,9 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
       agentName: agentState.agentName,
       agentId: agentState.draft ? undefined : agentState.agentId,
       cwd: agentState.cwd,
-      modelLabel: shortModelLabel(agentState.model, agentState.availableModels),
-      thinkingLevel: agentState.thinkingLevel,
-      availableThinkingLevels: agentState.availableThinkingLevels,
-      modelProvider: agentState.model?.provider,
     }),
     { compare: shallowRecordEqual }
   )
-  const machineReadOnly = useMachineReadOnly()
   const hideToolBlocks = useSelector(
     displaySettingsStore,
     (settings) => settings.hideToolBlocks
@@ -242,44 +228,6 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
               </DropdownMenuTrigger>
             </TitleTooltip>
             <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuItem
-                disabled={machineReadOnly}
-                onClick={() => {
-                  actionsRef.current.onOpenModelDialog()
-                }}
-              >
-                <span className="shrink-0">Model</span>
-                <span className="ml-auto min-w-0 truncate text-muted-foreground">
-                  {agentHeaderState.modelLabel}
-                </span>
-                <DropdownMenuShortcut className="ml-2">
-                  {formatShortcutLabel(appShortcut("M"))}
-                </DropdownMenuShortcut>
-              </DropdownMenuItem>
-              {agentHeaderState.availableThinkingLevels.length > 0 ? (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger disabled={machineReadOnly}>
-                    <span className="flex-1">Reasoning</span>
-                    <span className="text-muted-foreground">
-                      {thinkingLabel(agentHeaderState.thinkingLevel)}
-                    </span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="w-48">
-                    <DropdownMenuRadioGroup
-                      value={agentHeaderState.thinkingLevel}
-                      onValueChange={(level: string) => {
-                        void actionsRef.current.onSelectThinkingLevel(level)
-                      }}
-                    >
-                      {agentHeaderState.availableThinkingLevels.map((level) => (
-                        <DropdownMenuRadioItem key={level} value={level}>
-                          {thinkingLabel(level)}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ) : null}
               <ProfileMenuSub
                 cwd={displayAgentCwd || agentHeaderState.cwd}
                 agentId={agentHeaderState.agentId}
