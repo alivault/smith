@@ -250,10 +250,14 @@ function addProjectDialogReducer(
         directorySearchItems: [],
       }
     case "directorySearchFinished":
+      // The found folders come before "Add path", so the first one becomes
+      // the choice for Enter, not the typed text.
       return {
         ...state,
         directorySearchLoading: false,
         directorySearchItems: action.items,
+        selectedCommandValue:
+          action.items.length > 0 ? "" : state.selectedCommandValue,
       }
     case "directorySearchReset":
       if (
@@ -551,12 +555,34 @@ function useAppShellAddProjectDialogView({
       </CommandGroup>
     ) : null
 
+  // A typed path comes first. Search words come last, so Enter chooses a
+  // found project, not a folder named after the words.
+  const manualFirst = queryLooksLikePath
+  const manualGroup = manualPath ? (
+    <CommandGroup heading={manualGroupHeading}>
+      <CommandItem
+        value={`add ${manualPath}`}
+        onSelect={() => onAddProjectPath(manualPath)}
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <DirectoryPathLabel
+            path={manualPath}
+            prefix={<>{manualPathPrefix}&nbsp;</>}
+          />
+          <span className="truncate text-xs text-muted-foreground">
+            {addPathDescription}
+          </span>
+        </div>
+      </CommandItem>
+    </CommandGroup>
+  ) : null
+
   const commandValues = [
     ...(hasDirectoryMatches
       ? []
       : pathCompletionItems.map(pathCompletionCommandValue)),
     ...directorySearchItems.map(directorySearchCommandValue),
-    ...(manualPath ? [`add ${manualPath}`] : []),
+    ...(manualPath && manualFirst ? [`add ${manualPath}`] : []),
     ...openedMatching.map((directoryPath) => `opened ${directoryPath}`),
     ...currentMatching.map((directoryPath) => `current ${directoryPath}`),
     ...recentMatching.map((directoryPath) => `recent ${directoryPath}`),
@@ -564,6 +590,7 @@ function useAppShellAddProjectDialogView({
     ...(hasDirectoryMatches
       ? pathCompletionItems.map(pathCompletionCommandValue)
       : []),
+    ...(manualPath && !manualFirst ? [`add ${manualPath}`] : []),
   ]
 
   React.useEffect(() => {
@@ -720,24 +747,7 @@ function useAppShellAddProjectDialogView({
             ))}
           </CommandGroup>
         ) : null}
-        {manualPath ? (
-          <CommandGroup heading={manualGroupHeading}>
-            <CommandItem
-              value={`add ${manualPath}`}
-              onSelect={() => onAddProjectPath(manualPath)}
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <DirectoryPathLabel
-                  path={manualPath}
-                  prefix={<>{manualPathPrefix}&nbsp;</>}
-                />
-                <span className="truncate text-xs text-muted-foreground">
-                  {addPathDescription}
-                </span>
-              </div>
-            </CommandItem>
-          </CommandGroup>
-        ) : null}
+        {manualFirst ? manualGroup : null}
         {openedMatching.length > 0 ? (
           <CommandGroup heading="Already added">
             {openedMatching.map((directoryPath) => (
@@ -817,6 +827,7 @@ function useAppShellAddProjectDialogView({
           </CommandGroup>
         ) : null}
         {hasDirectoryMatches ? pathCompletionsGroup : null}
+        {manualFirst ? null : manualGroup}
       </CommandList>
       <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 px-3 py-2 text-xs text-muted-foreground md:flex">
         <span className="inline-flex items-center gap-1">
