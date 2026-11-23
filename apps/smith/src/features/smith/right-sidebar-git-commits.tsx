@@ -3,13 +3,16 @@ import {
   AlertTriangleIcon,
   ArrowUpRightIcon,
   CheckIcon,
+  ChevronDownIcon,
   CopyIcon,
   ExternalLinkIcon,
   FileDiffIcon,
   GitBranchIcon,
   Minimize2Icon,
   MoreHorizontalIcon,
+  SearchIcon,
   TagIcon,
+  XIcon,
 } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@/lib/smith/toast"
@@ -55,10 +58,18 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -79,6 +90,7 @@ import {
   formatGitCommitDetailTime,
   formatGitCommitFullDate,
   gitChangesQueryOptions,
+  gitCommitsSearchQueryOptions,
   gitFileStatusCharacters,
   gitFileStatusTone,
   gitFileStatusToneClass,
@@ -86,6 +98,17 @@ import {
   invalidateGitQueries,
   parseGitCommitGraphLine,
 } from "@/features/smith/right-sidebar-git-data"
+import {
+  GIT_COMMIT_SEARCH_DEBOUNCE_MS,
+  GIT_COMMIT_SEARCH_MAX_LENGTH,
+  GIT_COMMIT_SEARCH_MODES,
+  gitSearchHighlightParts,
+  isGitCommitSearchMode,
+  linearizeGitCommitLines,
+} from "@/features/smith/right-sidebar-git-search"
+import { EmptyState } from "@/features/smith/right-sidebar-issues"
+import { useMachineFeature } from "@/features/smith/machine-store"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { GitSection } from "@/features/smith/right-sidebar-git-section"
 import { GitSectionNote } from "@/features/smith/right-sidebar-section-note"
 import {
@@ -102,6 +125,7 @@ import type {
   GitCommitFile,
   GitCommitFilesResponse,
   GitCommitRemoteUrlResponse,
+  GitCommitSearchMode,
 } from "@/lib/smith/api"
 import { cn } from "@/lib/utils"
 import { useMachineId } from "@/lib/smith/machine-context"
@@ -1237,12 +1261,35 @@ function GitCommitFilesList({
   )
 }
 
+/** The text with the parts that match `query` in bold. */
+function GitSearchHighlight({ text, query }: { text: string; query: string }) {
+  if (!query) return text
+  return (
+    <>
+      {gitSearchHighlightParts(text, query).map((part, index) =>
+        part.match ? (
+          <mark
+            key={index}
+            className="bg-transparent font-semibold text-foreground"
+          >
+            {part.text}
+          </mark>
+        ) : (
+          <React.Fragment key={index}>{part.text}</React.Fragment>
+        )
+      )}
+    </>
+  )
+}
+
 type GitCommitRowProps = {
   viewerContextId: string
   cwd: string
   graphWidth: number
   line: string
   value: string
+  /** Text to show in bold in the commit title (a message search). */
+  highlight?: string
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
 }
 
@@ -1256,6 +1303,7 @@ function useGitCommitRowView({
   graphWidth,
   line,
   value,
+  highlight = "",
   onOpenCommitDiff,
 }: GitCommitRowProps) {
   const machineId = useMachineId()
@@ -1502,7 +1550,11 @@ function useGitCommitRowView({
         className="min-w-0 flex-1 truncate text-foreground"
         style={{ paddingLeft: graphWidth }}
       >
-        {title || parsed.hash || "Commit"}
+        {title ? (
+          <GitSearchHighlight text={title} query={highlight} />
+        ) : (
+          parsed.hash || "Commit"
+        )}
       </span>
     </AccordionTrigger>
   )
@@ -1860,12 +1912,14 @@ function GitCommitRows({
   cwd,
   lines,
   unpushedCommitHashes,
+  highlight,
   onOpenCommitDiff,
 }: {
   viewerContextId: string
   cwd: string
   lines: Array<string>
   unpushedCommitHashes: Set<string>
+  highlight?: string
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
 }) {
   const { maxLaneCount, rows } = buildGitCommitGraphRows(lines)
@@ -1908,6 +1962,7 @@ function GitCommitRows({
               graphWidth={graphWidth}
               line={line}
               value={rowValues[index] ?? `${index}`}
+              highlight={highlight}
               onOpenCommitDiff={onOpenCommitDiff}
             />
           </div>
@@ -1951,6 +2006,143 @@ function RestoreHistoryAccordionButton({
   )
 }
 
+function GitCommitSearchBar({
+  mode,
+  input,
+  loading,
+  sticky,
+  onModeChange,
+  onInputChange,
+}: {
+  mode: GitCommitSearchMode
+  input: string
+  loading: boolean
+  sticky: boolean
+  onModeChange: (mode: GitCommitSearchMode) => void
+  onInputChange: (value: string) => void
+}) {
+  const isMobile = useIsMobile()
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const current =
+    GIT_COMMIT_SEARCH_MODES.find((item) => item.value === mode) ??
+    GIT_COMMIT_SEARCH_MODES[0]!
+
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 items-center bg-background px-2 pt-2 pb-1.5",
+        sticky && "sticky top-0 z-20"
+      )}
+    >
+      <InputGroup className={cn("h-8 flex-1", isMobile && "h-11")}>
+        <InputGroupAddon>
+          <DropdownMenu>
+            <TitleTooltip title="Search by">
+              <DropdownMenuTrigger
+                render={
+                  <InputGroupButton
+                    size="xs"
+                    aria-label={`Search by ${current.label.toLowerCase()}`}
+                    className="text-muted-foreground"
+                  />
+                }
+              >
+                <SearchIcon />
+                {current.label}
+                <ChevronDownIcon className="size-3 opacity-70" />
+              </DropdownMenuTrigger>
+            </TitleTooltip>
+            <DropdownMenuContent
+              align="start"
+              className="w-36"
+              finalFocus={inputRef}
+            >
+              <DropdownMenuRadioGroup
+                value={mode}
+                onValueChange={(value) => {
+                  if (isGitCommitSearchMode(value)) onModeChange(value)
+                }}
+              >
+                {GIT_COMMIT_SEARCH_MODES.map((item) => (
+                  <DropdownMenuRadioItem
+                    key={item.value}
+                    value={item.value}
+                    closeOnClick
+                  >
+                    {item.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </InputGroupAddon>
+        <InputGroupInput
+          ref={inputRef}
+          type="search"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={GIT_COMMIT_SEARCH_MAX_LENGTH}
+          className="[&::-webkit-search-cancel-button]:appearance-none"
+          aria-label={`Search commits by ${current.label.toLowerCase()}`}
+          placeholder={current.placeholder}
+          value={input}
+          onChange={(event) => onInputChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && input) {
+              event.preventDefault()
+              event.stopPropagation()
+              onInputChange("")
+            }
+          }}
+        />
+        {loading || input ? (
+          <InputGroupAddon align="inline-end">
+            {loading ? (
+              <Spinner size="xs" aria-label="Searching commits" />
+            ) : null}
+            {input ? (
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear the search"
+                onClick={() => {
+                  onInputChange("")
+                  inputRef.current?.focus()
+                }}
+              >
+                <XIcon />
+              </InputGroupButton>
+            ) : null}
+          </InputGroupAddon>
+        ) : null}
+      </InputGroup>
+    </div>
+  )
+}
+
+function GitCommitsLoadMore({
+  loadMoreRef,
+  fetching,
+}: {
+  loadMoreRef: React.RefObject<HTMLDivElement | null>
+  fetching: boolean
+}) {
+  return (
+    <div ref={loadMoreRef} className="flex min-h-8 items-center">
+      {fetching ? (
+        <div
+          role="status"
+          aria-label="Loading more commits"
+          className="inline-flex items-center gap-2 px-1 text-xs text-muted-foreground"
+        >
+          <Spinner size="xs" />
+          Loading more commits…
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function GitCommitsSection({
   viewerContextId,
   cwd,
@@ -1967,11 +2159,39 @@ export function GitCommitsSection({
 }) {
   const machineId = useMachineId()
   const normalizedCwd = normalizeCwd(cwd)
+  const searchAvailable = useMachineFeature("git-history-search")
   const [commitsLimit, setCommitsLimit] = React.useState(GIT_COMMITS_PAGE_SIZE)
+  const [searchMode, setSearchMode] =
+    React.useState<GitCommitSearchMode>("message")
+  const [searchInput, setSearchInput] = React.useState("")
+  const [search, setSearch] = React.useState("")
+  // The limit belongs to one search; a new search starts at one page.
+  const [searchPage, setSearchPage] = React.useState({
+    key: "",
+    limit: GIT_COMMITS_PAGE_SIZE,
+  })
   const commitsLoadMoreRef = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     setCommitsLimit(GIT_COMMITS_PAGE_SIZE)
+    setSearchInput("")
   }, [normalizedCwd])
+  React.useEffect(() => {
+    const value = searchInput.trim()
+    // Clearing the field shows the history at once.
+    if (!value) {
+      setSearch("")
+      return
+    }
+    const timer = window.setTimeout(
+      () => setSearch(value),
+      GIT_COMMIT_SEARCH_DEBOUNCE_MS
+    )
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
+  const searching = searchAvailable && search !== ""
+  const searchKey = `${normalizedCwd}\n${searchMode}\n${search}`
+  const searchLimit =
+    searchPage.key === searchKey ? searchPage.limit : GIT_COMMITS_PAGE_SIZE
   const commitsScopeQueryKey = smithQueryKeys.gitCommits(
     viewerContextId,
     normalizedCwd
@@ -1995,18 +2215,61 @@ export function GitCommitsSection({
     },
     notifyOnChangeProps: ["data", "isFetching", "isPending", "error"],
   })
+  const searchQuery = useQuery({
+    ...gitCommitsSearchQueryOptions({
+      machineId,
+      viewerContextId,
+      cwd: normalizedCwd,
+      mode: searchMode,
+      query: search,
+      limit: searchLimit,
+    }),
+    enabled: Boolean(active && searching && viewerContextId && normalizedCwd),
+    // Keep the last results (dimmed) while the next search runs.
+    placeholderData: (previousData) => previousData,
+    notifyOnChangeProps: [
+      "data",
+      "isFetching",
+      "isPending",
+      "isPlaceholderData",
+      "error",
+    ],
+  })
   const commitsData = commitsQuery.data
   const commits = commitsData?.commits
-  const commitsHasMore = Boolean(commitsData?.commitsHasMore)
-  const meta = Array.isArray(commits) ? gitCommitsSummaryText(commits) : ""
-  const unpushedCommitHashes = new Set(commitsData?.unpushedCommitHashes ?? [])
+  const searchData = searching ? searchQuery.data : undefined
+  const searchStale = Boolean(
+    searching &&
+    (searchQuery.isPlaceholderData || searchInput.trim() !== search)
+  )
+  const searchLines = Array.isArray(searchData?.commits)
+    ? linearizeGitCommitLines(searchData.commits)
+    : searchData?.commits
+  const listHasMore = searching
+    ? Boolean(searchData?.commitsHasMore) && !searchQuery.isPlaceholderData
+    : Boolean(commitsData?.commitsHasMore)
+  const listFetching = searching
+    ? searchQuery.isFetching
+    : commitsQuery.isFetching
+  const listLines = searching ? searchLines : commits
+  const meta = Array.isArray(listLines) ? gitCommitsSummaryText(listLines) : ""
+  const unpushedCommitHashes = new Set(
+    (searching ? searchData : commitsData)?.unpushedCommitHashes ?? []
+  )
+  const highlight =
+    searchData?.mode === "message" && !searchStale ? searchData.query : ""
+  const searchLoading = Boolean(
+    searchAvailable &&
+    searchInput.trim() &&
+    (searchInput.trim() !== search || searchQuery.isFetching)
+  )
   React.useEffect(() => {
     const target = commitsLoadMoreRef.current
     if (
       !target ||
       !active ||
-      !commitsHasMore ||
-      commitsQuery.isFetching ||
+      !listHasMore ||
+      listFetching ||
       typeof IntersectionObserver === "undefined"
     ) {
       return
@@ -2019,14 +2282,92 @@ export function GitCommitsSection({
         if (!entry?.isIntersecting || requestedNextPage) return
 
         requestedNextPage = true
-        setCommitsLimit((value) => value + GIT_COMMITS_PAGE_SIZE)
+        if (searching) {
+          setSearchPage({
+            key: searchKey,
+            limit: searchLimit + GIT_COMMITS_PAGE_SIZE,
+          })
+        } else {
+          setCommitsLimit((value) => value + GIT_COMMITS_PAGE_SIZE)
+        }
       },
       { rootMargin: "320px 0px" }
     )
     observer.observe(target)
 
     return () => observer.disconnect()
-  }, [active, commitsHasMore, commitsQuery.isFetching, normalizedCwd])
+  }, [
+    active,
+    listHasMore,
+    listFetching,
+    normalizedCwd,
+    searching,
+    searchKey,
+    searchLimit,
+  ])
+  const searchBar =
+    searchAvailable &&
+    normalizedCwd &&
+    viewerContextId &&
+    commits !== null &&
+    !commitsQuery.error ? (
+      <GitCommitSearchBar
+        mode={searchMode}
+        input={searchInput}
+        loading={searchLoading}
+        sticky={embedded}
+        onModeChange={setSearchMode}
+        onInputChange={setSearchInput}
+      />
+    ) : null
+  const searchContent = !searching ? null : searchQuery.error && !searchData ? (
+    <GitSectionNote tone="destructive" className="px-3 py-2.5">
+      {getErrorMessage(searchQuery.error, "Failed to search commits")}
+    </GitSectionNote>
+  ) : typeof searchLines === "undefined" ? (
+    <GitSectionNote className="px-3 py-2.5">
+      <Spinner /> Searching commits…
+    </GitSectionNote>
+  ) : searchLines === null ? (
+    <GitSectionNote className="px-3 py-2.5">
+      No git repository detected.
+    </GitSectionNote>
+  ) : searchLines.length > 0 ? (
+    <div
+      className={cn(
+        "grid min-w-0 gap-0 transition-opacity",
+        searchStale && "opacity-50"
+      )}
+    >
+      <GitCommitRows
+        key={`${searchData?.mode}\n${searchData?.query}`}
+        viewerContextId={viewerContextId}
+        cwd={normalizedCwd}
+        lines={searchLines}
+        unpushedCommitHashes={unpushedCommitHashes}
+        highlight={highlight}
+        onOpenCommitDiff={onOpenCommitDiff}
+      />
+      {listHasMore ? (
+        <GitCommitsLoadMore
+          loadMoreRef={commitsLoadMoreRef}
+          fetching={listFetching}
+        />
+      ) : null}
+    </div>
+  ) : (
+    <div className={cn("transition-opacity", searchStale && "opacity-50")}>
+      <EmptyState
+        icon={<SearchIcon />}
+        title="No commits match"
+        description={
+          searchMode === "file"
+            ? "Check the path. It is relative to the project folder."
+            : "Check the spelling or search by something else."
+        }
+      />
+    </div>
+  )
   const content = !normalizedCwd ? (
     <GitSectionNote className="px-3 py-2.5">
       No directory selected.
@@ -2035,6 +2376,8 @@ export function GitCommitsSection({
     <GitSectionNote className="px-3 py-2.5">
       Waiting for viewer context…
     </GitSectionNote>
+  ) : searchContent ? (
+    searchContent
   ) : (commitsQuery.isPending && typeof commits === "undefined") ||
     (commitsQuery.isFetching && commits === null) ? (
     <GitSectionNote className="px-3 py-2.5">
@@ -2057,19 +2400,11 @@ export function GitCommitsSection({
         unpushedCommitHashes={unpushedCommitHashes}
         onOpenCommitDiff={onOpenCommitDiff}
       />
-      {commitsHasMore ? (
-        <div ref={commitsLoadMoreRef} className="flex min-h-8 items-center">
-          {commitsQuery.isFetching ? (
-            <div
-              role="status"
-              aria-label="Loading more commits"
-              className="inline-flex items-center gap-2 px-1 text-xs text-muted-foreground"
-            >
-              <Spinner size="xs" />
-              Loading more commits…
-            </div>
-          ) : null}
-        </div>
+      {listHasMore ? (
+        <GitCommitsLoadMore
+          loadMoreRef={commitsLoadMoreRef}
+          fetching={listFetching}
+        />
       ) : null}
     </div>
   ) : (
@@ -2079,7 +2414,12 @@ export function GitCommitsSection({
   )
 
   if (embedded) {
-    return <div className="grid min-w-0 gap-2 overflow-x-hidden">{content}</div>
+    return (
+      <div className="grid min-w-0 overflow-x-clip">
+        {searchBar}
+        <div className="grid min-w-0 gap-2">{content}</div>
+      </div>
+    )
   }
 
   if (flush) {
@@ -2102,6 +2442,7 @@ export function GitCommitsSection({
             />
           ) : null}
         </div>
+        {searchBar}
         <div className="safe-scroll-end min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div className="grid min-w-0 gap-2">{content}</div>
         </div>
@@ -2116,6 +2457,7 @@ export function GitCommitsSection({
       className="overflow-x-hidden"
       bodyClassName="min-w-0 overflow-x-hidden p-0"
     >
+      {searchBar}
       {content}
     </GitSection>
   )

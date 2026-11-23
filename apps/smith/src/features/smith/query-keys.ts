@@ -48,6 +48,23 @@ export const smithQueryKeys = {
     ["smith", "git-branches", viewerContextId, cwd] as const,
   gitCommits: (viewerContextId: string, cwd: string) =>
     ["smith", "git-commits", viewerContextId, cwd] as const,
+  gitCommitsSearch: (
+    viewerContextId: string,
+    cwd: string,
+    mode: string,
+    query: string,
+    limit: number
+  ) =>
+    [
+      "smith",
+      "git-commits",
+      viewerContextId,
+      cwd,
+      "search",
+      mode,
+      query,
+      limit,
+    ] as const,
   gitCommitDiff: (
     viewerContextId: string,
     cwd: string,
