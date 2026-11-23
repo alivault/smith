@@ -2815,7 +2815,7 @@ function PromptMessageCard({
 
   return (
     <div className="mr-2 ml-auto w-fit max-w-[calc(100%-0.5rem)] sm:max-w-[80%]">
-      <div className="relative rounded-3xl bg-primary px-5 py-2.5 text-primary-foreground">
+      <div className="relative rounded-3xl bg-primary px-5 py-2.5 text-primary-foreground corner-round">
         <BubbleTail />
         {labelText ? (
           <div className="mb-2 flex items-center gap-2">

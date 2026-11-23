@@ -57,13 +57,13 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: calc(var(--radius) * 0.6 * var(--corner-scale, 1));
+  --radius-md: calc(var(--radius) * 0.8 * var(--corner-scale, 1));
+  --radius-lg: calc(var(--radius) * var(--corner-scale, 1));
+  --radius-xl: calc(var(--radius) * 1.4 * var(--corner-scale, 1));
+  --radius-2xl: calc(var(--radius) * 1.8 * var(--corner-scale, 1));
+  --radius-3xl: calc(var(--radius) * 2.2 * var(--corner-scale, 1));
+  --radius-4xl: calc(var(--radius) * 2.6 * var(--corner-scale, 1));
 }
 
 @layer base {
@@ -152,6 +152,51 @@
   padding-bottom: calc(
     --spacing(--value(integer)) + var(--pane-safe-bottom, 0px)
   );
+}
+
+/*
+ * Corner smoothing (continuous corners, as on Apple platforms), the
+ * Tailwind way.
+ * - corner-*: the CSS corner-shape keywords as utilities (corner-round,
+ *   corner-squircle, …). Tailwind has no core utility yet
+ *   (tailwindlabs/tailwindcss#19298).
+ * - Every rounded box gets smooth corners by default (base layer), so the
+ *   rounded-* utilities need no second class. A box without a radius is
+ *   unchanged. superellipse(1.5) is between round (1) and squircle (2).
+ * - A smooth corner looks smaller than a round one of the same radius, so
+ *   the theme radii grow by --corner-scale where smoothing works.
+ * - Circles stay circles: rounded-full keeps the round shape. A traced shape
+ *   that must keep its arc (the message bubble) uses corner-round.
+ * Browsers without corner-shape (Safari for now) keep round corners and the
+ *   old radii.
+ */
+@utility corner-* {
+  corner-shape: --value(
+    "round",
+    "squircle",
+    "bevel",
+    "scoop",
+    "notch",
+    "square"
+  );
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  @layer base {
+    :root {
+      --corner-scale: 1.25;
+    }
+
+    *,
+    ::before,
+    ::after {
+      corner-shape: superellipse(1.5);
+    }
+  }
+}
+
+@utility rounded-full {
+  corner-shape: round;
 }
 
 .smith-terminal-panel .xterm {
