@@ -282,12 +282,21 @@ async function branches(cwd: string) {
   return { localBranches, remoteBranches }
 }
 
+const COMMIT_LOG_FORMAT =
+  "--pretty=format:%h%x09%H%x1f%P%x1f%an%x1f%ar%x1f%aI%x1f%s"
+
+async function unpushedCommits(cwd: string) {
+  return (await gitAllowFailure(cwd, ["rev-list", "@{upstream}..HEAD"])).stdout
+    .split("\n")
+    .filter(Boolean)
+}
+
 async function commits(cwd: string, limit: number) {
   const output = await gitAllowFailure(
     cwd,
     [
       "log",
-      "--pretty=format:%h%x09%H%x1f%P%x1f%an%x1f%ar%x1f%aI%x1f%s",
+      COMMIT_LOG_FORMAT,
       "--date-order",
       "-n",
       String(limit + 1),
@@ -298,12 +307,140 @@ async function commits(cwd: string, limit: number) {
   )
   const lines = output.stdout.split("\n").filter(Boolean)
   const hasMore = lines.length > limit
-  const unpushed = (
-    await gitAllowFailure(cwd, ["rev-list", "@{upstream}..HEAD"])
-  ).stdout
-    .split("\n")
-    .filter(Boolean)
-  return { commits: lines.slice(0, limit), hasMore, unpushed }
+  return {
+    commits: lines.slice(0, limit),
+    hasMore,
+    unpushed: await unpushedCommits(cwd),
+  }
+}
+
+export const COMMIT_SEARCH_MODES = [
+  "message",
+  "code",
+  "author",
+  "file",
+] as const
+export type CommitSearchMode = (typeof COMMIT_SEARCH_MODES)[number]
+export const MAX_COMMIT_SEARCH_LENGTH = 200
+
+export function commitSearchMode(value: string | null | undefined) {
+  const mode = value?.trim() || "message"
+  if (!(COMMIT_SEARCH_MODES as ReadonlyArray<string>).includes(mode))
+    throw badRequest(`invalid search mode: ${mode}`)
+  return mode as CommitSearchMode
+}
+
+function commitSearchQuery(value: string | null | undefined) {
+  const query = value?.trim() ?? ""
+  if (!query) throw badRequest("search query is required")
+  if (query.length > MAX_COMMIT_SEARCH_LENGTH)
+    throw badRequest(
+      `search query is longer than ${MAX_COMMIT_SEARCH_LENGTH} characters`
+    )
+  if (["\0", "\n", "\r"].some((character) => query.includes(character)))
+    throw badRequest("search query must be one line")
+  return query
+}
+
+/**
+ * The arguments that limit `git log` to the commits that match. The query is
+ * always one argument that starts with an option name (or follows `--`), so
+ * text such as `--all` stays text. Message and author search are literal and
+ * ignore case; code search (`-S`) is literal.
+ */
+function commitSearchArgs(mode: CommitSearchMode, query: string) {
+  switch (mode) {
+    case "message":
+      return {
+        options: ["--fixed-strings", "--regexp-ignore-case", `--grep=${query}`],
+        paths: [],
+      }
+    case "author":
+      return {
+        options: [
+          "--fixed-strings",
+          "--regexp-ignore-case",
+          `--author=${query}`,
+        ],
+        paths: [],
+      }
+    case "code":
+      return { options: [`-S${query}`], paths: [] }
+    case "file":
+      return { options: ["--follow"], paths: [validateRelative(query)] }
+  }
+}
+
+/**
+ * The commits of HEAD that match a search, newest first, in the same row
+ * format as the history (`changes`). `hasMore` tells whether a larger limit
+ * gives more rows.
+ */
+export async function searchCommits(
+  cwd: string,
+  requestedMode: string | null | undefined,
+  requestedQuery: string | null | undefined,
+  requestedLimit: number | undefined
+) {
+  const mode = commitSearchMode(requestedMode)
+  const query = commitSearchQuery(requestedQuery)
+  const { options, paths } = commitSearchArgs(mode, query)
+  const limit = Math.min(
+    MAX_COMMITS_LIMIT,
+    Math.max(1, requestedLimit ?? DEFAULT_COMMITS_LIMIT)
+  )
+  const empty = {
+    mode,
+    query,
+    commits: null,
+    commitsHasMore: false,
+    commitsLimit: 0,
+    unpushedCommitHashes: null,
+  }
+  if (!(await insideWorkTree(cwd))) return empty
+  return (
+    (await cached(`search:${cwd}:${mode}:${limit}:${query}`, async () => {
+      const head = await gitAllowFailure(
+        cwd,
+        ["rev-parse", "--verify", "-q", "HEAD"],
+        5000
+      )
+      if (!head.stdout.trim())
+        return {
+          ...empty,
+          commits: [],
+          commitsLimit: limit,
+          unpushedCommitHashes: [],
+        }
+      // `--literal-pathspecs` keeps a file name such as `:(top)x` a name.
+      const output = await git(
+        cwd,
+        [
+          "--literal-pathspecs",
+          "log",
+          COMMIT_LOG_FORMAT,
+          "--date-order",
+          "-n",
+          String(limit + 1),
+          "--no-color",
+          ...options,
+          "HEAD",
+          "--",
+          ...paths,
+        ],
+        15_000
+      )
+      const lines = output.stdout.split("\n").filter(Boolean)
+      return {
+        mode,
+        query,
+        commits: lines.slice(0, limit),
+        commitsHasMore: lines.length > limit,
+        commitsLimit: limit,
+        unpushedCommitHashes: await unpushedCommits(cwd),
+      }
+    })) ?? empty
+  )
 }
 
 export async function changes(
