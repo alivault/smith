@@ -17,6 +17,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer"
+import { SwitchIndicator } from "@/features/smith/settings-pages"
 import { useIsMobile } from "@/hooks/use-mobile"
 
 export type AppCommand = {
@@ -27,6 +28,11 @@ export type AppCommand = {
   shortcut?: string
   /** The current value of a setting, for example "On" or "Off". */
   valueLabel?: string
+  /**
+   * The state of an on/off setting. The row shows a switch, and choosing it
+   * flips the switch and keeps the palette open.
+   */
+  toggled?: boolean
   keywords?: Array<string>
   onSelect: () => void | Promise<void>
 }
@@ -79,13 +85,34 @@ function AppShellCommandPalette({
   }
   const commandGroups = Array.from(groups.entries())
 
+  // The commands are read when the palette opens, so the palette keeps the
+  // switches that changed since then.
+  const [flipped, setFlipped] = React.useState<ReadonlySet<string>>(new Set())
+
   React.useEffect(() => {
     if (!open && query) {
       setQuery("")
     }
+    if (!open) setFlipped(new Set())
   }, [open, query])
 
+  const isOn = (command: AppCommand) =>
+    command.toggled === undefined
+      ? undefined
+      : command.toggled !== flipped.has(command.id)
+
   const handleSelect = (command: AppCommand) => {
+    if (command.toggled !== undefined) {
+      setFlipped((current) => {
+        const next = new Set(current)
+        if (!next.delete(command.id)) next.add(command.id)
+        return next
+      })
+      void Promise.resolve(command.onSelect()).catch((error: unknown) => {
+        onCommandError?.(error)
+      })
+      return
+    }
     onOpenChange(false)
     void Promise.resolve(command.onSelect()).catch((error: unknown) => {
       onCommandError?.(error)
@@ -121,7 +148,18 @@ function AppShellCommandPalette({
                     {command.description}
                   </span>
                 </div>
-                {command.valueLabel ? (
+                {command.toggled !== undefined ? (
+                  <span
+                    // The command item hides its check mark next to a shortcut slot.
+                    data-slot="command-shortcut"
+                    className="flex shrink-0 items-center self-center pl-2"
+                  >
+                    <span className="sr-only">
+                      {isOn(command) ? "On" : "Off"}
+                    </span>
+                    <SwitchIndicator checked={Boolean(isOn(command))} />
+                  </span>
+                ) : command.valueLabel ? (
                   <CommandShortcut className="inline shrink-0 tracking-normal normal-case">
                     {command.valueLabel}
                   </CommandShortcut>

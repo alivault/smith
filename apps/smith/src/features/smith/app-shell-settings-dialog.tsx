@@ -366,6 +366,7 @@ function settingsPaletteCommands(
         title: command.title,
         description: command.description,
         valueLabel: command.page ? undefined : command.valueLabel,
+        toggled: command.page ? undefined : command.toggled,
         shortcut: command.shortcut,
         keywords: ["settings", group.heading, ...command.keywords],
         onSelect:
@@ -373,14 +374,7 @@ function settingsPaletteCommands(
             ? openTheme
             : command.page
               ? () => openPage(command.page!)
-              : async () => {
-                  await command.onSelect()
-                  if (command.toggled !== undefined) {
-                    toast.info(
-                      `${command.title}: ${formatToggleValue(!command.toggled)}`
-                    )
-                  }
-                },
+              : command.onSelect,
       }))
   )
 }
