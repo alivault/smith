@@ -8,6 +8,7 @@ import {
   projectImageFile,
   projectTree,
   readProjectFile,
+  searchDirectories,
   writeProjectFile,
 } from "../src/services/files.ts"
 import { tempDir } from "./support.ts"
@@ -135,4 +136,28 @@ void test("a project favicon is found in its folder, or in a monorepo app", asyn
   const favicon = await projectFavicon(monorepo)
   assert.equal(favicon?.path, "apps/web/src/app/icon.png")
   assert.match(favicon?.version ?? "", /^\d+-3$/)
+})
+
+void test("folder search matches words across separators, not every subfolder", async () => {
+  const root = await tempDir("smith-search-test-")
+  const home = await tempDir("smith-search-home-")
+  for (const path of ["code/pi-trader/docs", "code/pi-trader/src", "code/pico"])
+    await mkdir(join(root, path), { recursive: true })
+  const previousHome = process.env.HOME
+  process.env.HOME = home
+  try {
+    const names = async (query: string) =>
+      (await searchDirectories(query, root)).map((entry) =>
+        entry.value.slice(root.length)
+      )
+    assert.deepEqual(await names("pi trader"), ["/code/pi-trader"])
+    assert.deepEqual(await names("pi-trader"), ["/code/pi-trader"])
+    assert.deepEqual(await names("trader docs"), ["/code/pi-trader/docs"])
+    assert.deepEqual((await names("pi")).slice(0, 2).sort(), [
+      "/code/pi-trader",
+      "/code/pico",
+    ])
+  } finally {
+    process.env.HOME = previousHome
+  }
 })

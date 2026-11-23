@@ -521,12 +521,29 @@ export async function writeProjectFile(
   return { path: display(normalized), version: fileVersion(bytes) }
 }
 
+/** Lower case, and each run of other characters as one space. */
+function searchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+}
+
+/**
+ * Folders under the home folder (and the base folder) for the query. The
+ * words of the query match without their separators, so "pi trader" finds
+ * `pi-trader`. All words must be in the path, and the folder's own name must
+ * have the last word: the subfolders of a match do not all match too.
+ */
 export async function searchDirectories(
   query: string,
   baseCwd: string
 ): Promise<CompletionEntry[]> {
   const needle = query.trim().toLowerCase()
-  if (!needle) return []
+  const words = searchText(needle).split(" ").filter(Boolean)
+  if (words.length === 0) return []
+  const phrase = words.join(" ")
+  const lastWord = words.at(-1)!
   const home = homedir()
   const roots = [home]
   if (!baseCwd.startsWith(home)) roots.push(baseCwd)
@@ -548,16 +565,17 @@ export async function searchDirectories(
         const path = join(directory, name)
         queue.push({ directory: path, depth: depth + 1 })
         const displayed = display(path)
-        if (!displayed.toLowerCase().includes(needle) || seen.has(displayed))
-          continue
+        const nameText = searchText(name)
+        if (!nameText.includes(lastWord) || seen.has(displayed)) continue
+        const pathText = searchText(displayed)
+        if (!words.every((word) => pathText.includes(word))) continue
         seen.add(displayed)
-        const lowerName = name.toLowerCase()
         const score =
-          (lowerName === needle
+          (nameText === phrase
             ? 1000
-            : lowerName.startsWith(needle)
+            : nameText.startsWith(phrase)
               ? 800
-              : lowerName.includes(needle)
+              : nameText.includes(phrase)
                 ? 600
                 : 300) -
           depth * 5
