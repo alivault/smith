@@ -150,15 +150,15 @@ function syncThemeColorMeta() {
   const tags = document.head.querySelectorAll<HTMLMetaElement>(
     'meta[name="theme-color"]'
   )
-  // The tags of index.html follow the system scheme until the app runs.
-  tags.forEach((tag, index) => {
-    if (index > 0) tag.remove()
-  })
-  const tag =
-    tags[0] ?? document.head.appendChild(document.createElement("meta"))
+  if (tags.length === 1 && tags[0].content === color && !tags[0].media) return
+  // A new tag, not a new content: iOS WebKit repaints the status bar when the
+  // tag is added, but only on the next touch when the content changes. The
+  // tags of index.html follow the system scheme until the app runs.
+  const tag = document.createElement("meta")
   tag.name = "theme-color"
-  tag.removeAttribute("media")
   tag.content = color
+  tags.forEach((old) => old.remove())
+  document.head.appendChild(tag)
 }
 
 /**
