@@ -2777,6 +2777,27 @@ function AgentNoticeBody({
   )
 }
 
+/**
+ * The tail of a message bubble, as in Messages: a short point that leaves
+ * the bottom edge and turns out below the bottom right corner. It fills the
+ * corner, so the bubble and the tail are one shape. Its box is 24×18 px; the
+ * bubble's bottom edge is at y=10.
+ */
+function BubbleTail() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 18"
+      className="pointer-events-none absolute right-0 -bottom-2 h-4.5 w-6 text-primary"
+    >
+      <path
+        fill="currentColor"
+        d="M0 0H18V2C16.4 4.6 14.9 8.4 15.4 12.6C15.6 14.4 16.3 15.7 17 16.4C17.5 16.9 17.2 17.6 16.5 17.5C13.6 17.1 10 15.6 6.5 13.4C4.3 12 2 10.8 0 10Z"
+      />
+    </svg>
+  )
+}
+
 function PromptMessageCard({
   item,
 }: {
@@ -2794,7 +2815,8 @@ function PromptMessageCard({
 
   return (
     <div className="mr-2 ml-auto w-fit max-w-[calc(100%-0.5rem)] sm:max-w-[80%]">
-      <div className="relative rounded-3xl bg-primary px-5 py-2.5 text-primary-foreground before:absolute before:-right-1.75 before:bottom-0 before:h-5.5 before:w-4 before:rounded-bl-[16px_14px] before:bg-primary before:content-[''] after:absolute after:-right-6.5 after:bottom-0 after:h-6.25 after:w-6.5 after:rounded-bl-[10px] after:bg-background after:content-['']">
+      <div className="relative rounded-3xl bg-primary px-5 py-2.5 text-primary-foreground">
+        <BubbleTail />
         {labelText ? (
           <div className="mb-2 flex items-center gap-2">
             <Badge
