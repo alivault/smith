@@ -450,6 +450,8 @@ export type GhCleanupInfoResponse =
       cwd: string
       info: GhCleanupInfo
       keepLocalReason: string
+      /** Why the branch stays, remote and local (a long-lived branch). */
+      keepBranchReason?: string
       agents: Array<{
         id: string
         title: string

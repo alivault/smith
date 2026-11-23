@@ -572,6 +572,37 @@ export type CleanupInfo = {
     unknown: boolean
   }
   worktrees: Array<BranchWorktree>
+  /**
+   * Why the branch must stay, remote and local, or empty: the default
+   * branch, a protected branch, or a ruleset that forbids its deletion.
+   * GitHub's own settings say that it is a long-lived branch.
+   */
+  kept: string
+}
+
+/** Why GitHub says the branch stays, or empty. */
+async function keptBranchReason(
+  cwd: string,
+  branch: string,
+  defaultBranch: string
+) {
+  if (branch === defaultBranch) return "it is the default branch"
+  const path = encodeURIComponent(branch).replace(/%2F/g, "/")
+  const isProtected = await ghJson<{ protected?: boolean }>(cwd, [
+    "api",
+    `repos/{owner}/{repo}/branches/${path}`,
+  ]).then(
+    (data) => data.protected === true,
+    () => false
+  )
+  if (isProtected) return "it is a protected branch"
+  const rules = await ghJson<Array<{ type?: string }>>(cwd, [
+    "api",
+    `repos/{owner}/{repo}/rules/branches/${path}`,
+  ]).catch(() => [])
+  if (Array.isArray(rules) && rules.some((rule) => rule.type === "deletion"))
+    return "a ruleset forbids its deletion"
+  return ""
 }
 
 async function worktreesOn(root: string, branch: string) {
@@ -652,6 +683,10 @@ export async function cleanupInfo(
       unknown: localExists && !known,
     },
     worktrees: localExists ? await worktreesOn(root, branch) : [],
+    kept:
+      branch && !info.isCrossRepository
+        ? await keptBranchReason(cwd, branch, info.defaultBranch)
+        : "",
   }
 }
 
@@ -691,6 +726,18 @@ export async function cleanupBranch(
   const branch = info.branch
   if (info.state !== "MERGED") {
     throw badRequest("Clean up only after the pull request is merged")
+  }
+  if (info.kept) {
+    // A long-lived branch: nothing of it goes, whatever the client sends.
+    if (options.removeLocal || options.deleteRemote)
+      steps.push({
+        step: options.deleteRemote ? "remote-branch" : "local-branch",
+        target: branch,
+        ok: true,
+        skipped: true,
+        message: `Kept the branch: ${info.kept}.`,
+      })
+    return steps
   }
   const keepLocal = localWorkReason(info)
   if (options.removeLocal && info.localBranch.exists) {

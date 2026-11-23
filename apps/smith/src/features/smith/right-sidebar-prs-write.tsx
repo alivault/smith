@@ -661,12 +661,14 @@ function CleanupStep({
   const data = infoQuery.data
   const archived =
     archive ?? new Set((data?.agents ?? []).map((agent) => agent.id))
+  // GitHub says that the branch is long-lived: it stays, remote and local.
+  const kept = data?.keepBranchReason ?? ""
   const cleanup = useMutation({
     mutationFn: () =>
       post<Extract<GhCleanupResponse, { ok: true }>>("/api/gh-pr/cleanup", {
         number,
-        deleteRemoteBranch: deleteRemote,
-        removeWorktree: removeLocal,
+        deleteRemoteBranch: deleteRemote && !kept,
+        removeWorktree: removeLocal && !kept,
         archiveAgents: [...archived],
       }),
     onSuccess: () => void refresh(),
@@ -715,21 +717,27 @@ function CleanupStep({
       </div>
     )
   }
-  const remoteNote = info.isCrossRepository
-    ? "The branch is in a fork."
-    : !info.remoteBranch.exists
-      ? "It is gone already."
-      : !info.remoteBranch.matchesPr
-        ? "It has commits that are not in the pull request; it stays."
-        : `Deletes ${info.branch} on GitHub.`
+  const remoteNote = kept
+    ? `It stays: ${kept}.`
+    : info.isCrossRepository
+      ? "The branch is in a fork."
+      : !info.remoteBranch.exists
+        ? "It is gone already."
+        : !info.remoteBranch.matchesPr
+          ? "It has commits that are not in the pull request; it stays."
+          : `Deletes ${info.branch} on GitHub.`
   const localWorktrees = info.worktrees.filter((worktree) => !worktree.main)
   return (
     <div className="grid gap-3">
       <Field orientation="horizontal">
         <Checkbox
           id="cleanup-remote"
-          checked={deleteRemote && info.remoteBranch.matchesPr}
-          disabled={!info.remoteBranch.exists || !info.remoteBranch.matchesPr}
+          checked={deleteRemote && info.remoteBranch.matchesPr && !kept}
+          disabled={
+            Boolean(kept) ||
+            !info.remoteBranch.exists ||
+            !info.remoteBranch.matchesPr
+          }
           onCheckedChange={(checked) => setDeleteRemote(checked)}
         />
         <FieldContent>
@@ -742,8 +750,12 @@ function CleanupStep({
       <Field orientation="horizontal">
         <Checkbox
           id="cleanup-local"
-          checked={removeLocal && !data.keepLocalReason}
-          disabled={!info.localBranch.exists || Boolean(data.keepLocalReason)}
+          checked={removeLocal && !data.keepLocalReason && !kept}
+          disabled={
+            Boolean(kept) ||
+            !info.localBranch.exists ||
+            Boolean(data.keepLocalReason)
+          }
           onCheckedChange={(checked) => setRemoveLocal(checked)}
         />
         <FieldContent>
@@ -751,17 +763,24 @@ function CleanupStep({
             Remove the local worktree and branch
           </FieldLabel>
           <FieldDescription>
-            {!info.localBranch.exists
-              ? "There is no local branch."
-              : data.keepLocalReason
-                ? `They stay: ${data.keepLocalReason}.`
-                : localWorktrees.length > 0
-                  ? `${localWorktrees.length} worktree${localWorktrees.length === 1 ? "" : "s"}, then the branch ${info.branch}. A worktree with uncommitted changes stays.`
-                  : `The branch ${info.branch}.`}
+            {kept
+              ? `They stay: ${kept}.`
+              : !info.localBranch.exists
+                ? "There is no local branch."
+                : data.keepLocalReason
+                  ? `They stay: ${data.keepLocalReason}.`
+                  : localWorktrees.length > 0
+                    ? `${localWorktrees.length} worktree${localWorktrees.length === 1 ? "" : "s"}, then the branch ${info.branch}. A worktree with uncommitted changes stays.`
+                    : `The branch ${info.branch}.`}
           </FieldDescription>
         </FieldContent>
       </Field>
-      {data.keepLocalReason ? (
+      {kept ? (
+        <GitSectionNote>
+          {info.branch} is a long-lived branch: {kept}. Clean Up keeps it and
+          only archives the agents you choose.
+        </GitSectionNote>
+      ) : data.keepLocalReason ? (
         <GitSectionNote tone="destructive">
           {data.keepLocalReason}. Push or move those commits first.
         </GitSectionNote>

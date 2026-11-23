@@ -1486,6 +1486,7 @@ export function createApi(api: ApiContext) {
       cwd,
       info,
       keepLocalReason: prWrites.localWorkReason(info),
+      keepBranchReason: info.kept,
       agents: ids.map((id) => ({
         id,
         title: agents.summary(id, new Set()).title,
@@ -1525,7 +1526,7 @@ export function createApi(api: ApiContext) {
         })
         continue
       }
-      if (removeLocal && worktree && !keepLocal) {
+      if (removeLocal && worktree && !keepLocal && !info.kept) {
         try {
           await agents.removeWorktree(id, false)
           steps.push({
