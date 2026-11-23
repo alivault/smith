@@ -147,3 +147,20 @@ export function filterProjectAgentsByStatus(
   }
   return { visibleProjects, filteredAgents }
 }
+
+/** Agents that "Show N more" never hides: they work or wait for an answer. */
+export const BUSY_STATUS_FILTERS: AgentStatusFilters = ["working", "waiting"]
+
+/**
+ * The first `count` agents, and after them every busy agent that is further
+ * down the list, in list order.
+ */
+export function withBusyAgents(
+  keys: readonly string[],
+  count: number,
+  busyKeys: readonly string[]
+) {
+  if (count >= keys.length) return keys
+  const busy = new Set(busyKeys)
+  return keys.filter((key, index) => index < count || busy.has(key))
+}

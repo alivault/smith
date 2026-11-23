@@ -179,6 +179,8 @@ import {
   agentStatusGroup,
   filterProjectAgentsByStatus,
   agentMatchesStatusFilter,
+  BUSY_STATUS_FILTERS,
+  withBusyAgents,
   type AgentStatusFilter,
   type AgentStatusFilters,
   type AgentStatusGroup,
@@ -1683,11 +1685,42 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
   const unpinnedAgentKeys = agentKeys.filter(
     (entryKey) => !pinnedAgentKeySet.has(entryKey)
   )
+  // Agents that work or wait for an answer always show, with the agents
+  // above them (a subagent shows under its parent); "Show N more" only
+  // hides idle agents.
+  const busyAgentKeys = useSelector(
+    projectAgentsStore,
+    (state) => {
+      const keys = state.agentKeysByProject[project] ?? EMPTY_PROJECT_AGENT_KEYS
+      const keyById = new Map<string, string>()
+      for (const entryKey of keys) {
+        const id = state.entriesByKey.get(entryKey)?.id
+        if (id) keyById.set(id, entryKey)
+      }
+      const busy = new Set<string>()
+      for (const entryKey of keys) {
+        let entry = state.entriesByKey.get(entryKey)
+        if (!entry || !agentMatchesStatusFilter(entry, BUSY_STATUS_FILTERS))
+          continue
+        let key: string | undefined = entryKey
+        while (key && entry && !busy.has(key)) {
+          busy.add(key)
+          key = entry.parent ? keyById.get(entry.parent) : undefined
+          entry = key ? state.entriesByKey.get(key) : undefined
+        }
+      }
+      return keys.filter((entryKey) => busy.has(entryKey))
+    },
+    { compare: projectOrderEqual }
+  )
   const visibleCount = searchActive
     ? unpinnedAgentKeys.length
     : Math.min(unpinnedAgentKeys.length, renderCount)
-  const visibleAgentKeys = unpinnedAgentKeys.slice(0, visibleCount)
-  const hasMoreAgents = visibleCount < unpinnedAgentKeys.length
+  const visibleAgentKeys = searchActive
+    ? unpinnedAgentKeys
+    : withBusyAgents(unpinnedAgentKeys, visibleCount, busyAgentKeys)
+  const hiddenAgentCount = unpinnedAgentKeys.length - visibleAgentKeys.length
+  const hasMoreAgents = hiddenAgentCount > 0
   const altKeyHeld = useAltKeyHeld()
   // Holding Option turns "Show N more" into "Show less".
   const showLess =
@@ -1963,7 +1996,7 @@ const ProjectAgentGroup = React.memo(function ProjectAgentGroup({
                           ? "Show less"
                           : `Show ${Math.min(
                               PROJECT_AGENT_LOAD_MORE_COUNT,
-                              unpinnedAgentKeys.length - visibleCount
+                              hiddenAgentCount
                             )} more`}
                       </Button>
                     </div>
