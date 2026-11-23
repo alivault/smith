@@ -193,7 +193,7 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
                   size="icon-xs"
                   variant="ghost"
                   aria-label="Rename agent"
-                  className="-my-1 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 [&_svg:not([class*='size-'])]:size-3"
+                  className="size-4 shrink-0 rounded-sm text-muted-foreground opacity-0 group-hover/title:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 [&_svg:not([class*='size-'])]:size-2.5"
                   onClick={() => {
                     actionsRef.current.onRenameAgent()
                   }}
