@@ -7,8 +7,9 @@
  *
  * `guard` can refuse a command before it runs (the bash guard of
  * subagents, see `profiles.ts`): it returns the reason. An agent whose
- * profile has `bash: "sandbox"` runs each command in the sandbox of
- * `sandbox.ts`; without the sandbox, it cannot use bash.
+ * profile has `bash: "sandbox"` or `"sandbox-net"` runs each command in the
+ * sandbox of `sandbox.ts`, unless its parent added `bash`; without the
+ * sandbox, it cannot use bash.
  *
  * A bash call cannot wait for input: it runs with editors and pagers set to
  * programs that end at once, git prompts off, and stdin from `/dev/null` (the
@@ -38,7 +39,7 @@ import {
 import type { HostBridge } from "../extensions/host.ts"
 import { agentIdOf } from "../extensions/host.ts"
 import { endBashCall, ensureWatchdog, startBashCall } from "./bash-calls.ts"
-import { bashGuard, findProfile } from "./profiles.ts"
+import { bashGuard, findProfile, toolAccess } from "./profiles.ts"
 import { sandboxAvailable, sandboxExecution } from "./sandbox.ts"
 import { withDescriptions } from "./schema.ts"
 
@@ -177,16 +178,19 @@ export async function subagentCommandRefusal(
   })
 }
 
-/** Whether an agent's profile runs bash in the sandbox. */
+/** The sandbox that an agent's bash runs in, or undefined for none. */
 export function bashSandboxed(
   host: HostBridge | undefined,
   conversationId: ConversationId
 ) {
   const current = host?.current
   const id = agentIdOf(conversationId)
-  if (!current?.agents.has(id)) return false
-  const name = current.agents.meta(id).profile
-  return findProfile(name, current.settings().profiles)?.bash === "sandbox"
+  if (!current?.agents.has(id)) return undefined
+  const meta = current.agents.meta(id)
+  const profile = findProfile(meta.profile, current.settings().profiles)
+  if (!profile?.bash) return undefined
+  const bash = toolAccess(profile, meta.limits).bash
+  return bash === "sandbox" || bash === "sandbox-net" ? bash : undefined
 }
 
 export function createSmithCodingTools(options: {
@@ -213,12 +217,13 @@ export function createSmithCodingTools(options: {
       const prefix = options.shellPrefix()
       if (prefix) execution.command = `${prefix}\n${execution.command}`
       execution.env = { ...execution.env, ...NON_INTERACTIVE_ENV }
-      if (bashSandboxed(options.host, api.conversationId)) {
+      const sandbox = bashSandboxed(options.host, api.conversationId)
+      if (sandbox) {
         if (!(await sandboxAvailable()))
           throw new Error(
-            "This agent's profile runs bash only in a sandbox, and the sandbox needs bubblewrap (bwrap) on Linux, which is not available here. Use read and the other tools, or ask the user for another profile."
+            "This agent's profile runs bash only in a sandbox, and the sandbox needs bubblewrap (bwrap) on Linux or sandbox-exec on macOS, which is not available here. Use read and the other tools, or ask the user for another profile."
           )
-        await sandboxExecution(execution)
+        await sandboxExecution(execution, sandbox)
       }
       const marker = markers.get(api)
       if (marker) execution.env.SMITH_TOOL_CALL = marker

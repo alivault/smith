@@ -172,8 +172,10 @@ void test("the preview shows what a new agent in a folder gets, and writes nothi
     assert.equal(researcher.preview.profile, "researcher")
     const tools = researcher.tokens.tools.items.map((tool) => tool.name)
     assert.ok(tools.length > 0)
-    for (const name of ["bash", "write", "edit"])
+    for (const name of ["write", "edit"])
       assert.ok(!tools.includes(name), `${name} in ${tools.join(", ")}`)
+    // Its bash runs in the sandbox with network.
+    assert.ok(tools.includes("bash"))
     assert.match(
       researcher.sections.find((s) => s.id === "instructions")?.text ?? "",
       /You are a researcher/

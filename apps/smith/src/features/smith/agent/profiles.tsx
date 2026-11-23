@@ -39,7 +39,7 @@ type Profile = {
   extensions?: Array<string>
   removeTools?: Array<string>
   instructions?: string
-  bash?: "sandbox"
+  bash?: "sandbox" | "sandbox-net"
 }
 
 /** A profile name for display: "read-only" shows as "Read-only". */
@@ -267,8 +267,9 @@ function EditProfilesPage({ viewerContextId }: SettingsPageProps) {
           Each profile can have <code>description</code>,{" "}
           <code>extensions</code> (exactly these), <code>removeTools</code>,{" "}
           <code>instructions</code>, and <code>"bash": "sandbox"</code> (bash
-          with a read-only file system and no network). A profile with a
-          built-in name replaces it.
+          with a read-only file system and no network) or{" "}
+          <code>"sandbox-net"</code> (the same, with the network). A profile
+          with a built-in name replaces it.
         </>
       }
       onSave={async (value) => {

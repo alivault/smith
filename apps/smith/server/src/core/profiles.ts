@@ -14,9 +14,16 @@
  * away only the actions that change things.
  *
  * A profile with `bash: "sandbox"` runs each bash call in a sandbox with a
- * read-only filesystem and no network (see `sandbox.ts`). The `read-only` and
- * `reviewer` profiles keep bash only in that sandbox, so a model cannot change
- * files with a script instead of the edit tool.
+ * read-only filesystem and no network (see `sandbox.ts`); `bash:
+ * "sandbox-net"` is the same sandbox with the network. The `read-only` and
+ * `reviewer` profiles keep bash only in the first, `researcher` only in the
+ * second, so a model cannot change files with a script instead of the edit
+ * tool. A parent that adds `bash` to a subagent gives it bash without the
+ * sandbox.
+ *
+ * `spawnRefusal` checks a subagent's goal against its tools before it starts,
+ * so a parent does not give a goal that changes files to a profile that
+ * cannot change them.
  */
 import type { Context } from "@earendil-works/chord/context"
 import type {
@@ -25,6 +32,8 @@ import type {
   RegistryReader,
   ToolRegistration,
 } from "@earendil-works/pi-durable"
+
+import type { SandboxMode } from "./sandbox.ts"
 
 export type Profile = {
   name: string
@@ -35,8 +44,11 @@ export type Profile = {
   removeTools?: string[]
   /** Text added to the system prompt. */
   instructions?: string
-  /** `sandbox`: bash runs with a read-only filesystem and no network. */
-  bash?: "sandbox"
+  /**
+   * `sandbox`: bash runs with a read-only filesystem and no network.
+   * `sandbox-net`: the same, with the network.
+   */
+  bash?: SandboxMode
   /** Deferred tools to load at once, for example `web_search`. */
   loadTools?: string[]
 }
@@ -69,8 +81,27 @@ const WRITE_TOOLS = [
   "agents.stop",
 ]
 
-const SANDBOX_INSTRUCTIONS =
-  "Bash runs in a sandbox with no network. The filesystem is read-only; writes in the repository and in caches (for example a test build) work, but they are gone when the command ends."
+/** What a profile's bash sandbox lets a command do, for its instructions. */
+export function sandboxInstructions(
+  mode: SandboxMode,
+  platform: NodeJS.Platform = process.platform
+) {
+  const network =
+    mode === "sandbox-net"
+      ? platform === "darwin"
+        ? "Bash runs in a sandbox with the network, but not localhost."
+        : "Bash runs in a sandbox with the network."
+      : "Bash runs in a sandbox with no network."
+  const files =
+    platform === "darwin"
+      ? "The filesystem is read-only: a write in the repository, the home directory, or a cache fails. Only the temp directories ($TMPDIR and /tmp) are writable."
+      : "The filesystem is read-only; writes in the repository and in caches (for example a test build) work, but they are gone when the command ends."
+  const git =
+    mode === "sandbox-net"
+      ? " Commands that read work (git log, git show, gh pr view, gh pr diff, curl); git fetch and git pull change .git, so they do not."
+      : ""
+  return `${network} ${files}${git}`
+}
 
 export const BUILTIN_PROFILES: readonly Profile[] = [
   {
@@ -88,7 +119,7 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
   {
     name: "researcher",
     description:
-      "Web research, reading files, and the browser. No shell and no file changes.",
+      "Web research, reading files, and the browser. No file changes; bash runs in a sandbox with network.",
     extensions: [
       "coding-tools",
       "smith",
@@ -103,10 +134,10 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
       "schedule",
       "watch",
     ],
-    removeTools: ["write", "edit", "bash", "browser.eval", "watch.command"],
+    removeTools: ["write", "edit", "browser.eval", "watch.command"],
+    bash: "sandbox-net",
     loadTools: ["web_search", "fetch_content"],
-    instructions:
-      "You are a researcher: find and read sources, then report with links. Do not change files.",
+    instructions: `You are a researcher: find and read sources, then report with links. Do not change files. ${sandboxInstructions("sandbox-net")}`,
   },
   {
     name: "reviewer",
@@ -116,7 +147,7 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
       (tool) => tool !== "bash" && tool !== "agents.send"
     ),
     bash: "sandbox",
-    instructions: `You are a reviewer: read the diff (git diff, agents read), run the tests, and report problems with file and line. Do not change files. ${SANDBOX_INSTRUCTIONS}`,
+    instructions: `You are a reviewer: read the diff (git diff, agents read), run the tests, and report problems with file and line. Do not change files. ${sandboxInstructions("sandbox")}`,
   },
   {
     name: "read-only",
@@ -124,7 +155,7 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
       "Read and analyze code, with git history, tests, and the web tools. No file changes; bash runs in a sandbox without network.",
     removeTools: WRITE_TOOLS.filter((tool) => tool !== "bash"),
     bash: "sandbox",
-    instructions: `You are in read-only mode: do not change files or the repository. ${SANDBOX_INSTRUCTIONS}`,
+    instructions: `You are in read-only mode: do not change files or the repository. ${sandboxInstructions("sandbox")}`,
   },
 ]
 
@@ -305,6 +336,157 @@ function subagentInstructions(
   ]
     .filter(Boolean)
     .join(" ")
+}
+
+// -----------------------------------------------------------------------------
+// What a subagent can do, and the check before it starts
+
+/**
+ * One line for each built-in profile, for the descriptions of the tools that
+ * start agents. Keep it short: it is in every agent's tool list.
+ */
+export const PROFILE_GUIDE = [
+  "Profiles: full: every tool (default).",
+  "builder: files, shell, git, tests; no browser, cannot message agents.",
+  "researcher: web, read, browser, read-only bash with network; cannot change files.",
+  "reviewer: read, diffs, tests, agents read and send; read-only bash, no network; cannot change files.",
+  "read-only: read, git history, tests, web; read-only bash, no network; cannot change files.",
+  "If the goal writes files, commits, or pushes, use builder or full.",
+].join(" ")
+
+/** How an agent can use bash: without a sandbox, in one, or not at all. */
+export type BashMode = "full" | SandboxMode | "none"
+
+/**
+ * The file tools and the bash of an agent with `profile` and `limits`. A
+ * subagent that its parent gives `bash` runs bash without the sandbox.
+ */
+export function toolAccess(
+  profile: Profile | undefined,
+  limits: ToolLimits | undefined
+) {
+  const removed = removedNames(profile, { limits: limits ?? {} })
+  const add = new Set(currentNames(limits?.add))
+  const extensions = profile?.extensions && currentNames(profile.extensions)
+  // A tool that the parent adds brings its extension.
+  const coding =
+    !extensions ||
+    extensions.includes("coding-tools") ||
+    ["read", "write", "edit", "bash"].some((tool) => add.has(tool))
+  const has = (tool: string) => coding && !removed.has(tool)
+  const bash: BashMode = !has("bash")
+    ? "none"
+    : add.has("bash")
+      ? "full"
+      : (profile?.bash ?? "full")
+  return { write: has("write"), edit: has("edit"), bash }
+}
+
+/**
+ * What an agent cannot use of write, edit, and bash, for example "No: write,
+ * edit; bash is sandboxed (read-only, no network)". Empty when it has all.
+ */
+export function missingToolsText(access: ReturnType<typeof toolAccess>) {
+  const missing = [
+    ...(access.write ? [] : ["write"]),
+    ...(access.edit ? [] : ["edit"]),
+    ...(access.bash === "none" ? ["bash"] : []),
+  ]
+  const sandbox =
+    access.bash === "sandbox"
+      ? "bash is sandboxed (read-only, no network)"
+      : access.bash === "sandbox-net"
+        ? "bash is sandboxed (read-only, with network)"
+        : ""
+  if (missing.length === 0)
+    return sandbox ? sandbox[0]!.toUpperCase() + sandbox.slice(1) : ""
+  return `No: ${missing.join(", ")}${sandbox ? `; ${sandbox}` : ""}`
+}
+
+/** Words before a verb that turn its clause into a negation. */
+const NEGATION =
+  /\b(?:not|never|no|don'?t|doesn'?t|won'?t|shouldn'?t|mustn'?t|cannot|can'?t|without|avoid|instead of)\b/i
+
+/** A place where an order starts: the clause start, or a joining word. */
+const ORDER_START = String.raw`(?:^|\b(?:and|then|also|please|finally|you(?:\s+(?:must|should|will|need\s+to|can))?)\s+)`
+
+const EXTENSIONS =
+  "ts|tsx|js|jsx|mjs|cjs|json|md|mdx|txt|py|rs|go|rb|java|kt|swift|c|cc|cpp|h|hpp|cs|sh|yaml|yml|toml|ini|cfg|conf|env|css|scss|html|sql|xml|csv|lock"
+
+/**
+ * A file path: absolute or relative (`/a`, `./a`, `~/a`), with two or more
+ * slashes (`apps/smith/src`), or a file name with a known extension.
+ */
+const PATH = String.raw`["'\x60]?(?:(?:~|\.{1,2})?\/[\w.@-]+[\w.@/-]*|[\w.@-]+(?:\/[\w.@-]+){2,}\/?|(?:[\w.@-]+\/)*[\w-][\w.-]*\.(?:${EXTENSIONS})\b)`
+
+const GOAL_PATTERNS = [
+  // Git: commit, push, merge as orders.
+  new RegExp(
+    String.raw`${ORDER_START}(git\s+)?(?:commit|push|merge)\b(?!\s+(?:messages?|hash(?:es)?|sha|log|history|notifications?|conflicts?|requests?|base|commits?|access|rights|permissions?)\b)(?![-'])`,
+    "i"
+  ),
+  // Open a pull request.
+  new RegExp(
+    String.raw`${ORDER_START}(?:(?:open|create|file|submit|raise|make|send)\s+(?:an?\s+|the\s+)?(?:new\s+|draft\s+)?(?:PR|pull\s+request)s?\b|(?:run\s+)?gh\s+pr\s+(?:create|merge)\b)`,
+    "i"
+  ),
+  // A change verb, a short object, and a path.
+  new RegExp(
+    String.raw`${ORDER_START}(?:create|write|edit|modify|update|save|append|fix|delete|remove|rename|refactor|implement|add|change|apply|move|overwrite|patch|replace)\b(?:\s+(?!(?:for|of|about|on|like|with|than|whether|if|how|what|why)\b)[\w'-]+){0,4}?\s+(?:${PATH})`,
+    "i"
+  ),
+]
+
+/**
+ * The words of `goal` that ask to change files or the repository (commit,
+ * push, merge, open a PR, or a change verb with a file path), or undefined.
+ * It is careful: a verb must be an order (at the start of a clause or after
+ * "and", "then", "you must"), and a clause with a negation before the verb
+ * ("do not commit") does not count. It does not see a change without a path
+ * ("fix the bug").
+ */
+export function goalChangeIntent(goal: string) {
+  // Clauses: sentences, lines, list items, and parts after ";", ":", ",",
+  // or "but". A period inside a path does not end a sentence.
+  const clauses = goal
+    .split(/[.!?](?=\s|$)|[;\n]|[:,](?=\s)|\s[-*]\s|\bbut\b|\(|\)/i)
+    .map((clause) => clause.replace(/^\s*(?:[-*]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean)
+  for (const clause of clauses)
+    for (const pattern of GOAL_PATTERNS) {
+      const match = pattern.exec(clause)
+      if (!match) continue
+      if (NEGATION.test(clause.slice(0, match.index + match[0].length)))
+        continue
+      return match[0].trim()
+    }
+  return undefined
+}
+
+/**
+ * Why a subagent should not start with these tools, or undefined: its
+ * profile needs a sandbox that this machine does not have, or its goal
+ * changes files and its tools cannot.
+ */
+export function spawnRefusal(options: {
+  goal: string
+  profile: Profile | undefined
+  limits?: ToolLimits
+  /** Whether this machine has the bash sandbox. */
+  sandbox: boolean
+}) {
+  const access = toolAccess(options.profile, options.limits)
+  const name = options.profile?.name ?? "full"
+  const force = "If this is wrong, call again with force: true."
+  if (
+    (access.bash === "sandbox" || access.bash === "sandbox-net") &&
+    !options.sandbox
+  )
+    return `Profile ${name} runs bash only in a sandbox, and this machine has none (it needs bubblewrap on Linux or sandbox-exec on macOS), so the subagent would have no bash. Use profile: "builder", or add: ["bash"] for bash without the sandbox. ${force}`
+  if (access.write && access.edit && access.bash === "full") return undefined
+  const phrase = goalChangeIntent(options.goal)
+  if (!phrase) return undefined
+  return `The goal asks to change files or the repository ("${phrase}"), but profile ${name} cannot. ${missingToolsText(access)}. Use profile: "builder", or add: ["write", "edit", "bash"]. ${force}`
 }
 
 /**
