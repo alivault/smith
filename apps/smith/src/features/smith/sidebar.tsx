@@ -1451,6 +1451,7 @@ function projectUnreadAgents(state: ProjectAgentsState, project: string) {
 
 type ProjectStatusCounts = {
   working: number
+  pending: number
   waiting: number
   done: number
   live: number
@@ -1465,12 +1466,13 @@ function agentStatusCounts(
   agentKeys: Iterable<string>,
   skipKeys?: ReadonlySet<string>
 ): ProjectStatusCounts {
-  const counts = { working: 0, waiting: 0, done: 0, live: 0 }
+  const counts = { working: 0, pending: 0, waiting: 0, done: 0, live: 0 }
   for (const entryKey of agentKeys) {
     if (skipKeys?.has(entryKey)) continue
     const entry = state.entriesByKey.get(entryKey)
     if (!entry) continue
     if (agentMatchesStatusFilter(entry, "working")) counts.working++
+    if (agentMatchesStatusFilter(entry, "pending")) counts.pending++
     if (agentMatchesStatusFilter(entry, "waiting")) counts.waiting++
     if (agentMatchesStatusFilter(entry, "done")) counts.done++
     if (agentMatchesStatusFilter(entry, "live")) counts.live++
@@ -1484,6 +1486,7 @@ function sameProjectStatusCounts(
 ) {
   return (
     left.working === right.working &&
+    left.pending === right.pending &&
     left.waiting === right.waiting &&
     left.done === right.done &&
     left.live === right.live
@@ -1576,6 +1579,14 @@ function ProjectCounts({
         title="Working"
       >
         <Spinner size="xs" />
+      </ProjectCountButton>
+      <ProjectCountButton
+        {...shared}
+        filter="pending"
+        count={counts.pending}
+        title="Waiting on a job, timer, or watch"
+      >
+        <StatusEmoji className="text-[11px]">⏳</StatusEmoji>
       </ProjectCountButton>
       <ProjectCountButton
         {...shared}
@@ -3268,6 +3279,18 @@ function SplitProjectCounts({
       <span key="working" className="flex items-center gap-1">
         <Spinner size="xs" aria-label="Working" />
         {counts.working}
+      </span>
+    )
+  if (counts.pending > 0)
+    parts.push(
+      <span key="pending" className="flex items-center gap-1">
+        <StatusEmoji
+          label="Waiting on a job, timer, or watch"
+          className="text-[11px]"
+        >
+          ⏳
+        </StatusEmoji>
+        {counts.pending}
       </span>
     )
   if (counts.done > 0)

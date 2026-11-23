@@ -8,7 +8,12 @@ import type { AgentListEntry } from "@/lib/smith/api"
  * It is window state for each machine, so the heading and the agents of the
  * machine use it.
  */
-export type AgentStatusFilter = "working" | "waiting" | "done" | "live"
+export type AgentStatusFilter =
+  | "working"
+  | "pending"
+  | "waiting"
+  | "done"
+  | "live"
 
 /** The states that are on, in a fixed order. Never empty. */
 export type AgentStatusFilters = ReadonlyArray<AgentStatusFilter>
@@ -16,6 +21,7 @@ export type AgentStatusFilters = ReadonlyArray<AgentStatusFilter>
 const FILTER_ORDER: ReadonlyArray<AgentStatusFilter> = [
   "waiting",
   "working",
+  "pending",
   "done",
   "live",
 ]
@@ -85,8 +91,12 @@ export function agentMatchesStatusFilter(
   if (typeof filter !== "string")
     return filter.some((item) => agentMatchesStatusFilter(entry, item))
   switch (filter) {
+    // Works now: a model turn or a tool runs.
     case "working":
-      return Boolean((entry.streaming || entry.waiting) && !entry.needsInput)
+      return Boolean(entry.streaming && !entry.needsInput)
+    // Waits on a job, a timer, or a watch (⏳): not done, but not working.
+    case "pending":
+      return Boolean(entry.waiting && !entry.streaming && !entry.needsInput)
     case "waiting":
       return Boolean(entry.needsInput)
     case "done":
@@ -103,13 +113,19 @@ export function agentMatchesStatusFilter(
  * exactly one group. "live" is not a group: a live agent can also work or
  * be done.
  */
-export type AgentStatusGroup = "waiting" | "done" | "working" | "idle"
+export type AgentStatusGroup =
+  | "waiting"
+  | "done"
+  | "working"
+  | "pending"
+  | "idle"
 
 /** The groups in sidebar order: the agents that need you come first. */
 export const AGENT_STATUS_GROUPS: ReadonlyArray<AgentStatusGroup> = [
   "waiting",
   "done",
   "working",
+  "pending",
   "idle",
 ]
 
@@ -117,6 +133,7 @@ export const AGENT_STATUS_GROUPS: ReadonlyArray<AgentStatusGroup> = [
 export function agentStatusGroup(entry: AgentListEntry): AgentStatusGroup {
   if (agentMatchesStatusFilter(entry, "waiting")) return "waiting"
   if (agentMatchesStatusFilter(entry, "working")) return "working"
+  if (agentMatchesStatusFilter(entry, "pending")) return "pending"
   if (agentMatchesStatusFilter(entry, "done")) return "done"
   return "idle"
 }
@@ -149,7 +166,11 @@ export function filterProjectAgentsByStatus(
 }
 
 /** Agents that "Show N more" never hides: they work or wait for an answer. */
-export const BUSY_STATUS_FILTERS: AgentStatusFilters = ["working", "waiting"]
+export const BUSY_STATUS_FILTERS: AgentStatusFilters = [
+  "working",
+  "pending",
+  "waiting",
+]
 
 /**
  * The first `count` agents, and after them every busy agent that is further

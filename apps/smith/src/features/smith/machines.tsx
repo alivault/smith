@@ -292,9 +292,10 @@ function agentCounts(machine: MachineInfo) {
     projects.has(agent.project || agent.cwd)
   )
   return {
-    // An agent that waits on a timer, a watch, or a job is not done yet.
-    working: agents.filter(
-      (agent) => (agent.busy || agent.waiting) && !agent.needsInput
+    working: agents.filter((agent) => agent.busy && !agent.needsInput).length,
+    // Waits on a timer, a watch, or a job: not done yet, but not working.
+    pending: agents.filter(
+      (agent) => agent.waiting && !agent.busy && !agent.needsInput
     ).length,
     waiting: agents.filter((agent) => agent.needsInput).length,
     done: agents.filter(
@@ -379,7 +380,7 @@ function MachineCounts({
   machine: MachineInfo
   collapsed: boolean
 }) {
-  const { working, waiting, done, live } = agentCounts(machine)
+  const { working, pending, waiting, done, live } = agentCounts(machine)
   const online = machine.state === "online"
   // Grouped by state, the state groups replace the filters. In the split
   // layout, the agent list has the state groups.
@@ -421,6 +422,15 @@ function MachineCounts({
         title="Working"
       >
         <Spinner size="xs" />
+      </MachineCountButton>
+      <MachineCountButton
+        machine={machine}
+        activeOnly={activeOnly}
+        filter="pending"
+        count={pending}
+        title="Waiting on a job, timer, or watch"
+      >
+        <StatusEmoji className="text-[11px]">⏳</StatusEmoji>
       </MachineCountButton>
       <MachineCountButton
         machine={machine}
