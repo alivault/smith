@@ -37,6 +37,7 @@ import {
   RefreshCwIcon,
   SearchIcon,
   TriangleAlertIcon,
+  WorkflowIcon,
   XIcon,
 } from "lucide-react"
 
@@ -65,6 +66,7 @@ import { LineCommentForm } from "@/features/smith/line-comment-form"
 import { useMachineFeature } from "@/features/smith/machine-store"
 import { MarkdownBlock } from "@/features/smith/markdown-renderer"
 import { useGitHubLive } from "@/features/smith/github-live"
+import { useOpenRun } from "@/features/smith/right-sidebar-actions-data"
 import {
   useHandOffAgent,
   useReviewDraft,
@@ -124,6 +126,7 @@ import {
 import { useSmithDiffThemeOptions } from "@/features/smith/smith-diff-theme"
 import { useIsMobile } from "@/hooks/use-mobile"
 import type {
+  GhCheckLog,
   GhCheckSummary,
   GhPrCheck,
   GhPrReview,
@@ -234,7 +237,7 @@ export function ChecksIcon({
   return null
 }
 
-function Chip({
+export function Chip({
   children,
   title,
   className,
@@ -342,7 +345,7 @@ function PrChips({ pr, agent }: { pr: GhPrSummary; agent?: BranchAgent }) {
   )
 }
 
-function Section({
+export function Section({
   title,
   count,
   defaultOpen = true,
@@ -684,22 +687,34 @@ function PrList({
 // Checks
 
 function CheckIcon_({ check }: { check: GhPrCheck }) {
-  const className = "size-3.5 shrink-0"
-  switch (check.bucket) {
+  return <BucketIcon bucket={check.bucket} />
+}
+
+/** The icon of a check state: fail, cancel, pending, skipping, or pass. */
+export function BucketIcon({
+  bucket,
+  className,
+  "aria-label": label,
+}: {
+  bucket: string
+  className?: string
+  "aria-label"?: string
+}) {
+  const props = (color: string) => ({
+    "aria-label": label,
+    className: cn("size-3.5 shrink-0", color, className),
+  })
+  switch (bucket) {
     case "fail":
-      return <CircleXIcon className={cn(className, "text-red-500")} />
+      return <CircleXIcon {...props("text-red-500")} />
     case "cancel":
-      return (
-        <CircleMinusIcon className={cn(className, "text-muted-foreground")} />
-      )
+      return <CircleMinusIcon {...props("text-muted-foreground")} />
     case "pending":
-      return <ClockIcon className={cn(className, "text-amber-500")} />
+      return <ClockIcon {...props("text-amber-500")} />
     case "skipping":
-      return (
-        <CircleDashedIcon className={cn(className, "text-muted-foreground")} />
-      )
+      return <CircleDashedIcon {...props("text-muted-foreground")} />
     default:
-      return <CircleCheckIcon className={cn(className, "text-emerald-500")} />
+      return <CircleCheckIcon {...props("text-emerald-500")} />
   }
 }
 
@@ -721,6 +736,15 @@ function CheckLog({
     check: check.jobId ?? check.name,
     enabled: true,
   })
+  return <CheckLogView query={logQuery} />
+}
+
+/** The failed steps of a check or an Actions job, from its log query. */
+export function CheckLogView({
+  query: logQuery,
+}: {
+  query: { isPending: boolean; error: unknown; data?: GhCheckLog }
+}) {
   const data = logQuery.data
   // The error is at the end: show the end first.
   const scrollToEnd = React.useCallback((element: HTMLPreElement | null) => {
@@ -790,6 +814,7 @@ function CheckRow({
 }) {
   const failed = check.bucket === "fail"
   const [open, setOpen] = React.useState(false)
+  const openRun = useOpenRun()
   const name = (
     <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
       <span className="truncate">{check.name}</span>
@@ -825,6 +850,18 @@ function CheckRow({
             {name}
           </>
         )}
+        {openRun && check.runId ? (
+          <TitleTooltip title="Show the run in Actions">
+            <button
+              type="button"
+              aria-label={`Show the run of ${check.name} in Actions`}
+              className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+              onClick={() => openRun(Number(check.runId))}
+            >
+              <WorkflowIcon className="size-3" />
+            </button>
+          </TitleTooltip>
+        ) : null}
         {check.link ? (
           <TitleTooltip title="Open the check">
             <a

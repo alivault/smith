@@ -369,6 +369,62 @@ export type GhBranchPrsResponse =
   | { ok: true; cwd: string; prs: Record<string, GhBranchPr | null> }
   | ApiErrorResponse
 
+/** A GitHub Actions workflow run (server `github-actions.ts`). */
+export type GhRun = {
+  databaseId: number
+  name: string
+  /** The commit or pull request title. */
+  displayTitle: string
+  /** queued, in_progress, completed, waiting, requested, or pending. */
+  status: string
+  /** success, failure, cancelled, skipped, timed_out, ...; empty while it runs. */
+  conclusion: string
+  event: string
+  headBranch: string
+  headSha: string
+  createdAt: string
+  updatedAt: string
+  url: string
+  workflowName: string
+}
+
+export type GhRunStep = {
+  number: number
+  name: string
+  status: string
+  conclusion: string
+  startedAt: string
+  completedAt: string
+}
+
+export type GhRunJob = {
+  databaseId: number
+  name: string
+  status: string
+  conclusion: string
+  startedAt: string
+  completedAt: string
+  url: string
+  steps: Array<GhRunStep>
+}
+
+export type GhRunDetail = GhRun & {
+  attempt: number
+  jobs: Array<GhRunJob>
+}
+
+export type GhRunsResponse =
+  | { ok: true; cwd: string; runs: Array<GhRun> }
+  | ApiErrorResponse
+
+export type GhRunResponse =
+  | { ok: true; cwd: string; run: GhRunDetail }
+  | ApiErrorResponse
+
+export type GhRunLogResponse =
+  | { ok: true; cwd: string; check: GhCheckLog }
+  | ApiErrorResponse
+
 export type GhCreatePrInfo = {
   branch: string
   defaultBranch: string

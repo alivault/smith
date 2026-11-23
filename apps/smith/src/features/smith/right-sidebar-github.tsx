@@ -1,6 +1,6 @@
 /**
- * The GitHub tab of the right sidebar: issues and pull requests, with a
- * switch at the top. The tab keeps the value "issues" (stored as the
+ * The GitHub tab of the right sidebar: issues, pull requests and Actions
+ * runs, with a switch at the top. The tab keeps the value "issues" (stored as the
  * active tab), so older stored values still work.
  */
 import * as React from "react"
@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useMachineFeature } from "@/features/smith/machine-store"
+import { ActionsPanel } from "@/features/smith/right-sidebar-actions"
+import { OpenRunContext } from "@/features/smith/right-sidebar-actions-data"
 import { EmptyState, IssuesPanel } from "@/features/smith/right-sidebar-issues"
 import { useGitHubRepo } from "@/features/smith/right-sidebar-issues-data"
 import { PrsPanel } from "@/features/smith/right-sidebar-prs"
@@ -19,13 +21,12 @@ import { getErrorMessage } from "@/features/smith/right-sidebar-shared"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { safeLocalStorageGetItem, safeLocalStorageSetItem } from "@/lib/smith"
 
-type Segment = "issues" | "prs"
+type Segment = "issues" | "prs" | "actions"
 const SEGMENT_STORAGE_KEY = "smith.github.segment"
 
 function readSegment(): Segment {
-  return safeLocalStorageGetItem(SEGMENT_STORAGE_KEY) === "prs"
-    ? "prs"
-    : "issues"
+  const stored = safeLocalStorageGetItem(SEGMENT_STORAGE_KEY)
+  return stored === "prs" || stored === "actions" ? stored : "issues"
 }
 
 export function GitHubPanel({
@@ -39,19 +40,29 @@ export function GitHubPanel({
 }) {
   const isMobile = useIsMobile()
   const prsAvailable = useMachineFeature("github-prs")
+  const actionsAvailable = useMachineFeature("github-actions")
   const [stored, setStored] = React.useState<Segment>(readSegment)
   const requested = useRequestedPr()
-  const segment: Segment = prsAvailable ? stored : "issues"
+  const [requestedRun, setRequestedRun] = React.useState<{
+    id: number
+    at: number
+  } | null>(null)
+  const segment: Segment =
+    !prsAvailable || (stored === "actions" && !actionsAvailable)
+      ? "issues"
+      : stored
   const repoQuery = useGitHubRepo({
     viewerContextId,
     cwd,
-    enabled: active && segment === "prs",
+    enabled: active && segment !== "issues",
   })
   const repo = repoQuery.data?.available ? repoQuery.data : undefined
 
   const choose = (value: Segment) => {
     setStored(value)
     safeLocalStorageSetItem(SEGMENT_STORAGE_KEY, value)
+    // A run that a check opened does not open again on a later visit.
+    setRequestedRun(null)
   }
 
   React.useEffect(() => {
@@ -60,8 +71,15 @@ export function GitHubPanel({
     safeLocalStorageSetItem(SEGMENT_STORAGE_KEY, "prs")
   }, [requested])
 
+  // A check of a pull request opens its run in the Actions segment.
+  const openRun = React.useCallback((id: number) => {
+    setStored("actions")
+    safeLocalStorageSetItem(SEGMENT_STORAGE_KEY, "actions")
+    setRequestedRun({ id, at: Date.now() })
+  }, [])
+
   let prs: React.ReactNode = null
-  if (segment === "prs") {
+  if (segment !== "issues") {
     if (!cwd) {
       prs = (
         <GitSectionNote className="px-3 py-2.5">
@@ -99,6 +117,17 @@ export function GitHubPanel({
           }
         />
       )
+    } else if (segment === "actions") {
+      prs = (
+        <ActionsPanel
+          key={cwd}
+          viewerContextId={viewerContextId}
+          cwd={cwd}
+          repo={repo}
+          active={active}
+          requested={requestedRun}
+        />
+      )
     } else {
       prs = (
         <PrsPanel
@@ -124,7 +153,12 @@ export function GitHubPanel({
             value={[segment]}
             onValueChange={(values) => {
               const value = values[0]
-              if (value === "issues" || value === "prs") choose(value)
+              if (
+                value === "issues" ||
+                value === "prs" ||
+                (value === "actions" && actionsAvailable)
+              )
+                choose(value)
             }}
           >
             <ToggleGroupItem value="issues" className="flex-1">
@@ -133,6 +167,11 @@ export function GitHubPanel({
             <ToggleGroupItem value="prs" className="flex-1">
               Pull Requests
             </ToggleGroupItem>
+            {actionsAvailable ? (
+              <ToggleGroupItem value="actions" className="flex-1">
+                Actions
+              </ToggleGroupItem>
+            ) : null}
           </ToggleGroup>
         </div>
       ) : null}
@@ -144,7 +183,9 @@ export function GitHubPanel({
             active={active}
           />
         ) : (
-          prs
+          <OpenRunContext value={actionsAvailable ? openRun : null}>
+            {prs}
+          </OpenRunContext>
         )}
       </div>
     </div>

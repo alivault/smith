@@ -112,6 +112,16 @@ export const smithQueryKeys = {
   ) => ["smith", "gh-prs", viewerContextId, cwd, "log", number, check] as const,
   ghBranchPrs: (viewerContextId: string, cwd: string, branches: string) =>
     ["smith", "gh-branch-prs", viewerContextId, cwd, branches] as const,
+  ghRuns: (viewerContextId: string, cwd: string) =>
+    ["smith", "gh-runs", viewerContextId, cwd] as const,
+  ghRunList: (viewerContextId: string, cwd: string, branch: string) =>
+    ["smith", "gh-runs", viewerContextId, cwd, "list", branch] as const,
+  ghRun: (viewerContextId: string, cwd: string, id: number) =>
+    ["smith", "gh-runs", viewerContextId, cwd, "run", id] as const,
+  // Not under "gh-runs": a job log does not change, so a `github_changed`
+  // event does not load it again.
+  ghRunLog: (viewerContextId: string, cwd: string, id: number, job: number) =>
+    ["smith", "gh-run-logs", viewerContextId, cwd, id, job] as const,
   gitCommitFiles: (viewerContextId: string, cwd: string, commit: string) =>
     ["smith", "git-commit-files", viewerContextId, cwd, commit] as const,
   gitAction: (
