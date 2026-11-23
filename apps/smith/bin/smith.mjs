@@ -19,7 +19,8 @@ Usage: smith [serve|status|stop|restart|import-pi] [--port N] [--host H]
        smith update [version] [--check] [--channel stable|preview]
              [--no-restart]
        smith channel [show | set stable|preview]
-       smith machine add|list|status|reconnect|rename|enable|disable|remove
+       smith machine add|list|status|reconnect|rename|enable|disable|remove|
+             update
        smith agent list|start|send|show|wait|stop
        smith mcp
        smith move-project <old-path> <new-path>

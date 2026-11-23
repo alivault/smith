@@ -14,7 +14,7 @@
  *     Install the newest version on the update channel the way this copy
  *     was installed, and restart a running server (see services/self-update.ts).
  *   smith-server channel [show | set stable|preview]
- *   smith-server machine add|list|status|reconnect|rename|enable|disable|remove …
+ *   smith-server machine add|list|status|reconnect|rename|enable|disable|remove|update …
  *   smith-server agent list|start|send|show|wait|stop …   (see control/cli.ts)
  *   smith-server mcp      the MCP URL (see control/mcp.ts)
  *   smith-server move-project <old-path> <new-path>

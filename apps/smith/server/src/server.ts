@@ -66,7 +66,7 @@ import { LocalAgentOps } from "./control/agent-ops.ts"
 import { AgentSearch } from "./core/agent-search.ts"
 import { SearchIndex } from "./services/search-index.ts"
 import { addMcpRoutes } from "./control/mcp.ts"
-import { isUpdateChannel, Updater } from "./services/self-update.ts"
+import { isUpdateChannel, isVersion, Updater } from "./services/self-update.ts"
 
 export type SmithServer = {
   readonly server: Server
@@ -478,9 +478,14 @@ export async function startServer(options: {
     await updater.check().catch(() => undefined)
     return { ok: true, ...updater.status() }
   })
-  router.post("/api/system/update/install", () => {
+  // `version` (from a hub, feature `self-update-version`) installs that
+  // version, also an older one; without it, the newest on the channel.
+  router.post("/api/system/update/install", async (request) => {
+    const body = await request.body<{ version?: unknown }>()
+    if (body.version !== undefined && !isVersion(body.version))
+      throw new ApiError(400, "version must be a version such as 3.1.3")
     try {
-      updater.install()
+      updater.install(body.version)
     } catch (error) {
       throw new ApiError(
         409,

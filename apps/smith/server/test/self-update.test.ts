@@ -182,6 +182,16 @@ void test("the server checks the registry and reports the update", async () => {
     })
     // A source checkout does not install itself.
     assert.equal((await post("/api/system/update/install")).status, 409)
+    // A hub gives a version; it must be one.
+    assert.equal(
+      (await post("/api/system/update/install", { version: "3.1.0" })).status,
+      409
+    )
+    assert.equal(
+      (await post("/api/system/update/install", { version: "latest; rm" }))
+        .status,
+      400
+    )
     const preview = (await (
       await post("/api/system/update/settings", { channel: "preview" })
     ).json()) as Status

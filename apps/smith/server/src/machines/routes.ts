@@ -25,6 +25,7 @@ import {
   type Router,
 } from "../http.ts"
 import { LOCAL_MACHINE_ID } from "./profiles.ts"
+import { MachineUpdater, parseUpdateRequest } from "./update.ts"
 import {
   MachineError,
   type MachineInfo,
@@ -345,6 +346,32 @@ function machineError(error: unknown): never {
   throw error
 }
 
+/**
+ * `POST /api/machines/update` `{ ids?, all?, version?, latest? }`: start
+ * the updates (`update.ts`) and answer at once with the plan. The machine
+ * list (`update` of each machine) shows the progress and the results.
+ */
+export function addMachineUpdateRoute(
+  router: Router,
+  updater: MachineUpdater,
+  snapshot: () => Record<string, unknown> = () => ({})
+) {
+  router.post("/api/machines/update", async (request) => {
+    let started: ReturnType<MachineUpdater["start"]>
+    try {
+      started = updater.start(parseUpdateRequest(await request.body()))
+    } catch (error) {
+      machineError(error)
+    }
+    return {
+      ok: true,
+      hubVersion: updater.hubVersion,
+      plan: started.plan,
+      ...snapshot(),
+    }
+  })
+}
+
 /** The hub routes for the client. */
 export function addHubRoutes(
   router: Router,
@@ -355,13 +382,16 @@ export function addHubRoutes(
     viewers: Viewers
     machines: MachineManager
     startedAt: number
+    /** Tests give their own updater. */
+    updater?: MachineUpdater
   }
 ) {
   const { agents, runtime, hub, viewers, machines } = context
+  const updater = context.updater ?? new MachineUpdater(machines)
   const snapshot = () => ({
     machines: [
       localMachine(agents, runtime, viewers, context.startedAt),
-      ...machines.list(),
+      ...updater.withStatus(machines.list()),
     ],
     ...(machines.fileError ? { fileError: machines.fileError } : {}),
   })
@@ -381,9 +411,11 @@ export function addHubRoutes(
     stream.send({ type: "machines", ...snapshot() })
     const stopLocal = onSummaryChange(hub, viewers, send)
     const stopRemote = machines.subscribe(send)
+    const stopUpdates = updater.subscribe(send)
     void stream.closed.then(() => {
       stopLocal()
       stopRemote()
+      stopUpdates()
       if (timer) clearTimeout(timer)
     })
     return HANDLED
@@ -405,6 +437,8 @@ export function addHubRoutes(
       }
       return { ok: true, ...snapshot() }
     }
+
+  addMachineUpdateRoute(router, updater, snapshot)
 
   router.post(
     "/api/machines/:id/retry",

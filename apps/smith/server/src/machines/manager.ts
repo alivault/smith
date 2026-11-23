@@ -36,9 +36,11 @@ import {
   isAuthFailure,
   MIN_API_CONTRACT_VERSION,
   remoteStatus,
+  updateOverSsh,
   type ConnectionProblem,
 } from "./remote.ts"
 import { SshTransport } from "./ssh.ts"
+import type { MachineUpdateStatus } from "./update.ts"
 import { TransportError, type MachineTransport } from "./transport.ts"
 
 export type MachineState =
@@ -103,6 +105,8 @@ export type MachineInfo = {
   features?: string[]
   /** The last known agents; kept while the machine is offline. */
   summary?: MachineSummary
+  /** The last update from this hub (`update.ts`). */
+  update?: MachineUpdateStatus
 }
 
 /** An event of a remote machine that the hub acts on, for example a push. */
@@ -679,6 +683,26 @@ export class MachineConnection {
       request.once("error", reject)
       request.end(body)
     })
+  }
+
+  /**
+   * Update Smith over SSH (`remote.ts`), also when the machine is not
+   * online. Never asks for input.
+   */
+  async sshUpdate(version: string | undefined) {
+    const signal = AbortSignal.timeout(15 * 60_000)
+    await this.#transport.connect(signal)
+    const result = await updateOverSsh(
+      this.#transport,
+      readCache(this.#dir),
+      this.profile,
+      version,
+      signal
+    )
+    writeCache(this.#dir, { ...readCache(this.#dir), ...result.cache })
+    // Connect again now, not after the backoff.
+    this.retryNow()
+    return result
   }
 
   /** The endpoint for the proxy. Throws when the machine is not online. */

@@ -76,6 +76,21 @@ export type MachineInfo = {
     projects: Array<string>
     agents: Array<MachineAgentSummary>
   }
+  /** The last update from the hub (`POST /api/machines/update`). */
+  update?: MachineUpdateStatus
+}
+
+export type MachineUpdateStatus = {
+  state: "updating" | "done" | "failed"
+  step?: "installing" | "restarting" | "reconnecting"
+  from?: string
+  target?: string
+  version?: string
+  via?: "route" | "ssh"
+  /** What happened, or the error. */
+  message?: string
+  startedAt: number
+  endedAt?: number
 }
 
 type MachinesSnapshot = {
@@ -139,6 +154,11 @@ function subscribe(listener: () => void) {
   return () => {
     listeners.delete(listener)
   }
+}
+
+/** The machines now, outside React. */
+export function currentMachines() {
+  return snapshot.machines
 }
 
 export function useMachines() {

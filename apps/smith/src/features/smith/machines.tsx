@@ -100,12 +100,120 @@ import {
   type AgentStatusFilter,
 } from "@/features/smith/agent-status-filter"
 import {
+  currentMachines,
   useMachines,
   viewerContextIdForSummaries,
   type MachineInfo,
   type MachineAgentSummary,
   type MachineState,
 } from "@/features/smith/machine-store"
+import {
+  canUpdateMachine,
+  endedUpdates,
+  hubVersion,
+  machinesToUpdate,
+  machineVersion,
+} from "@/features/smith/machine-update"
+
+/**
+ * The updates that this window started, for the toasts: machine ID → the
+ * `startedAt` of the update.
+ */
+const updatesStartedHere = new Map<string, number>()
+
+/** A toast for each update of this window that ended. */
+function reportEndedUpdates(machines: ReadonlyArray<MachineInfo>) {
+  for (const machine of endedUpdates(machines, updatesStartedHere)) {
+    updatesStartedHere.delete(machine.id)
+    const update = machine.update!
+    if (update.state === "done")
+      toast.success(
+        `${machine.label} runs Smith ${update.version ?? machineVersion(machine) ?? ""}`.trim()
+      )
+    else
+      toast.error(
+        `Could not update ${machine.label}: ${update.message ?? "unknown error"}`
+      )
+  }
+}
+
+type UpdatePlanEntry = {
+  id: string
+  label: string
+  action: "update" | "skip"
+  reason?: string
+}
+
+/**
+ * Update Smith on machines to the hub's version. The hub answers at once;
+ * the machine list shows the progress, and `MachinesDialogController`
+ * shows a toast when an update ends.
+ */
+async function updateMachines(ids: Array<string>) {
+  try {
+    const result = await fetchJson<{
+      plan?: Array<UpdatePlanEntry>
+      machines?: Array<MachineInfo>
+    }>(hubUrl("/api/machines/update"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+    const plan = result.plan ?? []
+    for (const entry of plan) {
+      const startedAt = result.machines?.find(
+        (machine) => machine.id === entry.id
+      )?.update?.startedAt
+      if (entry.action === "update" && startedAt !== undefined)
+        updatesStartedHere.set(entry.id, startedAt)
+    }
+    // An update can end before this answer comes.
+    reportEndedUpdates(currentMachines())
+    const skipped = plan.filter((entry) => entry.action === "skip")
+    if (skipped.length)
+      toast.info(
+        skipped
+          .map((entry) => `${entry.label}: ${entry.reason ?? "skipped"}`)
+          .join("\n")
+      )
+  } catch (error) {
+    toast.error(errorText(error))
+  }
+}
+
+const UPDATE_STEPS = {
+  installing: "Installing…",
+  restarting: "Restarting…",
+  reconnecting: "Reconnecting…",
+} as const
+
+/** The Update button of a machine, with a spinner while it updates. */
+function MachineUpdateButton({
+  machine,
+  hub,
+}: {
+  machine: MachineInfo
+  hub: string | undefined
+}) {
+  const update = machine.update
+  if (update?.state === "updating")
+    return (
+      <Button size="sm" variant="outline" disabled>
+        <Spinner size="xs" />
+        {update.step ? UPDATE_STEPS[update.step] : "Updating…"}
+      </Button>
+    )
+  if (!canUpdateMachine(machine, hub)) return null
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() => void updateMachines([machine.id])}
+    >
+      Update to {hub}
+    </Button>
+  )
+}
 
 async function machineAction(
   id: string,
@@ -1254,10 +1362,18 @@ export function emitOpenMachines() {
   emitSmithEvent("smith:open-machines", {})
 }
 
-function MachineRow({ machine }: { machine: MachineInfo }) {
+function MachineRow({
+  machine,
+  hub,
+}: {
+  machine: MachineInfo
+  /** The version of the hub. */
+  hub: string | undefined
+}) {
   const [label, setLabel] = React.useState(machine.label)
   React.useEffect(() => setLabel(machine.label), [machine.label])
   const local = machine.id === LOCAL_MACHINE_ID
+  const version = machineVersion(machine)
   const saveLabel = () => {
     const next = label.trim()
     if (!next || next === machine.label) {
@@ -1291,6 +1407,7 @@ function MachineRow({ machine }: { machine: MachineInfo }) {
         )}
         <span className="shrink-0 text-xs text-muted-foreground">
           {machineStateLabel(machine)}
+          {version ? ` · ${version}` : ""}
         </span>
       </div>
       {!local ? (
@@ -1298,8 +1415,12 @@ function MachineRow({ machine }: { machine: MachineInfo }) {
           <div className="truncate font-mono text-xs text-muted-foreground">
             ssh {machine.target}
             {machine.dataDir ? ` · ${machine.dataDir}` : ""}
-            {machine.version ? ` · Smith ${machine.version}` : ""}
           </div>
+          {machine.update?.state === "failed" ? (
+            <p className="text-xs text-destructive">
+              The update failed: {machine.update.message}
+            </p>
+          ) : null}
           {machine.problem ? (
             <div className="space-y-1 text-xs">
               <p>{machine.problem.message}</p>
@@ -1319,16 +1440,16 @@ function MachineRow({ machine }: { machine: MachineInfo }) {
               ) : null}
               {machine.problem.kind === "update" ? (
                 <p className="text-muted-foreground">
-                  Update Smith on {machine.label}, then run in a terminal on the
-                  hub:{" "}
+                  Click Update, or run in a terminal on the hub:{" "}
                   <code className="rounded bg-muted px-1">
-                    smith machine reconnect {machine.label}
+                    smith machine update {machine.label}
                   </code>
                 </p>
               ) : null}
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
+            <MachineUpdateButton machine={machine} hub={hub} />
             {machine.state !== "online" && machine.enabled ? (
               <Button
                 size="sm"
@@ -1380,6 +1501,8 @@ function MachinesDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { loaded, machines, fileError } = useMachines()
+  const hub = hubVersion(machines)
+  const behind = machinesToUpdate(machines)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
@@ -1401,9 +1524,25 @@ function MachinesDialog({
                 {fileError}
               </p>
             ) : null}
-            <SettingsSection title="Machines">
+            <SettingsSection
+              title="Machines"
+              action={
+                behind.length > 0 ? (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="text-muted-foreground"
+                    onClick={() =>
+                      void updateMachines(behind.map((machine) => machine.id))
+                    }
+                  >
+                    Update all ({behind.length})
+                  </Button>
+                ) : null
+              }
+            >
               {machines.map((machine) => (
-                <MachineRow key={machine.id} machine={machine} />
+                <MachineRow key={machine.id} machine={machine} hub={hub} />
               ))}
             </SettingsSection>
             <SettingsSection title="Add a machine">
@@ -1442,6 +1581,7 @@ export function MachinesDialogController() {
   useSmithEvent("smith:remove-machine", ({ machineId }) =>
     setRemovingId(machineId)
   )
+  useUpdateToasts(machines)
   const removing = machines.find((machine) => machine.id === removingId)
   return (
     <>
@@ -1459,16 +1599,27 @@ export function MachinesDialogController() {
   )
 }
 
+/** A toast when an update that this window started ends. */
+function useUpdateToasts(machines: ReadonlyArray<MachineInfo>) {
+  React.useEffect(() => reportEndedUpdates(machines), [machines])
+}
+
 function SettingsSection({
   children,
   title,
+  action,
 }: {
   children: React.ReactNode
   title: string
+  /** A small button at the end of the title. */
+  action?: React.ReactNode
 }) {
   return (
     <section className="space-y-1">
-      <h3 className="pt-3 text-sm font-semibold">{title}</h3>
+      <div className="flex items-end justify-between gap-2 pt-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {action}
+      </div>
       <div className="divide-y rounded-lg border px-3">{children}</div>
     </section>
   )

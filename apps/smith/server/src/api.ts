@@ -229,6 +229,7 @@ export function createApi(api: ApiContext) {
         "durable-agents",
         "server-restart",
         "self-update",
+        "self-update-version",
         "agent-index",
         "conversation",
         "paginated-conversation-history",

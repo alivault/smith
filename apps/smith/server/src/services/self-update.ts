@@ -74,6 +74,14 @@ export function compareVersions(left: string, right: string) {
   return 0
 }
 
+/** A release version such as `3.1.3` or `3.2.0-beta.1`. */
+export function isVersion(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(value)
+  )
+}
+
 // ---------------------------------------------------------------------------
 // The install of this copy
 
@@ -445,25 +453,37 @@ export class Updater {
   }
 
   /**
-   * Install the newest version in the background; `status().installing`
-   * shows the progress. A restart then runs it.
+   * Install the newest version (or `version`, also an older one) in the
+   * background; `status().installing` shows the progress. A restart then
+   * runs it. A hub gives `version` to update its machines to its own
+   * version (`machines/update.ts`).
    */
-  install() {
+  install(version?: string) {
+    if (version !== undefined && !isVersion(version))
+      throw new Error(`Not a version: ${version}`)
     if (this.#install.kind !== "npm")
       throw new Error(
         this.#install.kind === "source"
           ? "This Smith runs from a source checkout. Update it with git."
-          : `Smith cannot update this install by itself. Run: ${installCommand(this.#install, this.#latest ?? "latest")}`
+          : `Smith cannot update this install by itself. Run: ${installCommand(this.#install, version ?? this.#latest ?? "latest")}`
       )
     if (this.#installing) return
     this.#error = undefined
     this.#installing = (async () => {
       try {
-        if (!this.#latest || this.#latestChannel !== this.config().channel)
+        if (
+          !version &&
+          (!this.#latest || this.#latestChannel !== this.config().channel)
+        )
           await this.check()
-        const target = this.#latest!
+        const target = version ?? this.#latest!
         const installed = diskVersion(this.#install.root) ?? VERSION
-        if (compareVersions(target, installed) <= 0) return
+        if (
+          version
+            ? compareVersions(target, installed) === 0
+            : compareVersions(target, installed) <= 0
+        )
+          return
         await installVersion(this.#install, target)
       } catch (error) {
         this.#error = `Could not install the update: ${message(error)}`

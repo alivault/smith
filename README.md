@@ -183,6 +183,7 @@ smith machine add ali@workbox      # SSH target, alias, or Tailscale name
 smith machine list
 smith machine status workbox
 smith machine reconnect workbox    # after a password, key, or check prompt
+smith machine update --all         # update Smith on all machines to the hub's version
 smith machine disable workbox      # stop connecting; enable connects again
 smith machine remove workbox       # Smith keeps running on workbox
 ```
@@ -194,6 +195,11 @@ SSH config, keys, and agent with one shared connection. It never asks for
 input; when SSH needs you, the machine shows **Attention** and the command to
 run. Smith does not store passwords or keys, and it copies no settings or
 credentials to other machines.
+
+`machine update <machine>` (or `--all`) installs the hub's version of Smith on
+the machine and restarts it; `--version V` picks a version, and `--latest`
+the newest one on the machine's update channel. The machines dialog has an
+**Update** button for each machine that is behind the hub.
 
 Tailscale works: use a MagicDNS name or a `100.x` address as the target,
 with OpenSSH or Tailscale SSH.

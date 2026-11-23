@@ -297,6 +297,87 @@ export async function installRemote(
     )
 }
 
+/**
+ * Restart the remote server so that it runs new files. Ask it to restart
+ * itself, so that it stays under its launcher or systemd unit. Only a server
+ * without a restart route is stopped and started again in the background.
+ */
+export async function restartRemote(
+  transport: MachineTransport,
+  cache: MachineCache,
+  profile: Pick<MachineProfile, "dataDir">
+) {
+  const restarted = await transport.exec(
+    smithCommand(cache, profile, ["restart"]),
+    { timeoutMs: 13 * 60_000 }
+  )
+  if (restarted.code !== 0) {
+    await transport.exec(smithCommand(cache, profile, ["stop", "--wait"]), {
+      timeoutMs: 11 * 60_000,
+    })
+    await startRemote(transport, cache, profile)
+  }
+}
+
+/**
+ * Update Smith on the remote host over SSH: `smith update [version]` there,
+ * which installs where that Smith is installed and restarts it. A `smith`
+ * without `update` (or none) gets the install of `machine add` (npm into
+ * `~/.local`) and a restart. A server that does not run is started.
+ * Without `version`, the newest version on the remote's channel.
+ */
+export async function updateOverSsh(
+  transport: MachineTransport,
+  previous: MachineCache,
+  profile: Pick<MachineProfile, "dataDir" | "label">,
+  version: string | undefined,
+  signal?: AbortSignal
+): Promise<{ cache: MachineCache; upToDate?: string }> {
+  let cache = previous
+  if (!cache.smithPath || !cache.nodeDir || cache.shellPath === undefined)
+    cache = cacheFromDiscovery(await discover(transport, signal), cache)
+  if (!cache.nodeDir)
+    throw new TransportError(
+      `Node.js ${MIN_NODE.join(".")} or later was not found on ${profile.label}.`,
+      127,
+      ""
+    )
+  const help = cache.smithPath
+    ? await transport.exec(smithCommand(cache, { dataDir: null }, ["--help"]), {
+        timeoutMs: 20_000,
+        ...(signal ? { signal } : {}),
+      })
+    : undefined
+  let upToDate: string | undefined
+  if (help?.code === 0 && help.stdout.includes("smith update")) {
+    const result = await transport.exec(
+      smithCommand(cache, profile, ["update", ...(version ? [version] : [])]),
+      { timeoutMs: 13 * 60_000, ...(signal ? { signal } : {}) }
+    )
+    const output = `${result.stdout}\n${result.stderr}`
+    if (result.code !== 0)
+      throw new TransportError(
+        lastLines(output, 2) ||
+          `smith update failed with exit code ${result.code}`,
+        result.code,
+        lastLines(output, 12)
+      )
+    upToDate = /Smith (\S+) is up to date/.exec(result.stdout)?.[1]
+  } else {
+    if (!version)
+      throw new Error(
+        `smith on ${profile.label} is too old to look for a new version. Give a version.`
+      )
+    await installRemote(transport, cache.nodeDir, version)
+    cache = cacheFromDiscovery(await discover(transport, signal), cache)
+    if (await remoteStatus(transport, cache, profile, signal))
+      await restartRemote(transport, cache, profile)
+  }
+  if (!(await remoteStatus(transport, cache, profile, signal)))
+    await startRemote(transport, cache, profile)
+  return { cache, ...(upToDate ? { upToDate } : {}) }
+}
+
 export type ConnectionProblem = {
   kind: "auth" | "stopped" | "update" | "setup" | "error"
   message: string
