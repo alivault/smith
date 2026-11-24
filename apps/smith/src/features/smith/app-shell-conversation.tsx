@@ -720,7 +720,11 @@ function AppShellWorkingIndicatorLabel({ label }: { label: string }) {
     )
   }
 
-  return <div className="leading-5 font-medium text-foreground">{label}</div>
+  // The shimmer of AI Elements (https://ui.shadcn.com/docs/utils/shimmer)
+  // shows that the agent works.
+  return (
+    <div className="shimmer leading-5 font-medium text-foreground">{label}</div>
+  )
 }
 
 function AppShellMessagesWorkingIndicator({

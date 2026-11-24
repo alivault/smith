@@ -39,6 +39,21 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { TraceCollapsibleContent } from "@/components/ui/trace"
+import {
+  ChainOfThought,
+  ChainOfThoughtContent,
+  ChainOfThoughtHeader,
+  ChainOfThoughtStep,
+  ChainOfThoughtSteps,
+} from "@/components/ai-elements/chain-of-thought"
+import {
+  Reasoning,
+  ReasoningText,
+  ReasoningTrigger,
+} from "@/components/ai-elements/reasoning"
+import { AnsiText, Terminal } from "@/components/ai-elements/terminal"
+import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TitleTooltip } from "@/components/ui/tooltip"
@@ -1507,386 +1522,6 @@ function compactionTriggerText(
     : `Compaction: Compacted from ${block.tokensBefore.toLocaleString()} tokens`
 }
 
-type AnsiStyleState = {
-  bold: boolean
-  dim: boolean
-  italic: boolean
-  underline: boolean
-  foreground?: string
-  background?: string
-}
-
-type AnsiTextSegment = {
-  text: string
-  style?: AnsiStyleState
-}
-
-type ParsedAnsiSequence = {
-  kind: "sgr" | "control"
-  end: number
-  params?: string
-}
-
-const ANSI_16_COLORS = [
-  "#3f3f46",
-  "#ef4444",
-  "#22c55e",
-  "#eab308",
-  "#3b82f6",
-  "#d946ef",
-  "#06b6d4",
-  "#e4e4e7",
-  "#71717a",
-  "#f87171",
-  "#4ade80",
-  "#facc15",
-  "#60a5fa",
-  "#e879f9",
-  "#22d3ee",
-  "#fafafa",
-] as const
-
-function defaultAnsiStyle(): AnsiStyleState {
-  return {
-    bold: false,
-    dim: false,
-    italic: false,
-    underline: false,
-  }
-}
-
-function cloneAnsiStyle(style: AnsiStyleState): AnsiStyleState | undefined {
-  if (
-    !style.bold &&
-    !style.dim &&
-    !style.italic &&
-    !style.underline &&
-    !style.foreground &&
-    !style.background
-  ) {
-    return undefined
-  }
-
-  return { ...style }
-}
-
-function ansiStyleKey(style?: AnsiStyleState) {
-  if (!style) return ""
-  return [
-    style.bold ? "1" : "0",
-    style.dim ? "1" : "0",
-    style.italic ? "1" : "0",
-    style.underline ? "1" : "0",
-    style.foreground || "",
-    style.background || "",
-  ].join(";")
-}
-
-function pushAnsiTextSegment(
-  segments: Array<AnsiTextSegment>,
-  text: string,
-  style: AnsiStyleState
-) {
-  if (!text) return
-
-  const nextStyle = cloneAnsiStyle(style)
-  const previous = segments[segments.length - 1]
-
-  if (previous && ansiStyleKey(previous.style) === ansiStyleKey(nextStyle)) {
-    previous.text += text
-    return
-  }
-
-  segments.push({ text, style: nextStyle })
-}
-
-function parseAnsiSequence(
-  text: string,
-  index: number
-): ParsedAnsiSequence | null {
-  const charCode = text.charCodeAt(index)
-  const isEsc = charCode === 0x1b
-  const isCsi = charCode === 0x9b
-
-  if (!isEsc && !isCsi) return null
-
-  if (isCsi) {
-    return parseAnsiCsiSequence(text, index, index + 1)
-  }
-
-  const introducer = text[index + 1]
-
-  if (introducer === "[") {
-    return parseAnsiCsiSequence(text, index, index + 2)
-  }
-
-  if (introducer === "]") {
-    const bellEnd = text.indexOf("\u0007", index + 2)
-    const stEnd = text.indexOf("\u001b\\", index + 2)
-    const candidates = [bellEnd, stEnd].filter((value) => value >= 0)
-    const end = candidates.length > 0 ? Math.min(...candidates) : -1
-
-    if (end < 0) {
-      return { kind: "control", end: index + 2 }
-    }
-
-    return {
-      kind: "control",
-      end: end === stEnd ? end + 2 : end + 1,
-    }
-  }
-
-  return { kind: "control", end: Math.min(text.length, index + 2) }
-}
-
-function parseAnsiCsiSequence(
-  text: string,
-  start: number,
-  paramsStart: number
-): ParsedAnsiSequence | null {
-  for (let index = paramsStart; index < text.length; index += 1) {
-    const code = text.charCodeAt(index)
-
-    if (code >= 0x40 && code <= 0x7e) {
-      const final = text[index]
-      return {
-        kind: final === "m" ? "sgr" : "control",
-        end: index + 1,
-        params: text.slice(paramsStart, index),
-      }
-    }
-  }
-
-  return { kind: "control", end: start + 1 }
-}
-
-function parseAnsiSgrParams(params = "") {
-  if (!params) return [0]
-
-  return params
-    .replace(/:/g, ";")
-    .split(";")
-    .map((param) => {
-      if (!param || param.startsWith("?")) return 0
-      const value = Number(param)
-      return Number.isFinite(value) ? value : 0
-    })
-}
-
-function ansi256ToCss(value: number | undefined) {
-  if (typeof value !== "number") return undefined
-  if (value >= 0 && value < 16) return ANSI_16_COLORS[value]
-
-  if (value >= 16 && value <= 231) {
-    const offset = value - 16
-    const red = Math.floor(offset / 36)
-    const green = Math.floor((offset % 36) / 6)
-    const blue = offset % 6
-    const toChannel = (channel: number) =>
-      channel === 0 ? 0 : 55 + channel * 40
-
-    return `rgb(${toChannel(red)} ${toChannel(green)} ${toChannel(blue)})`
-  }
-
-  if (value >= 232 && value <= 255) {
-    const channel = 8 + (value - 232) * 10
-    return `rgb(${channel} ${channel} ${channel})`
-  }
-}
-
-function readAnsiExtendedColor(codes: Array<number>, index: number) {
-  const mode = codes[index + 1]
-
-  if (mode === 5) {
-    return {
-      color: ansi256ToCss(codes[index + 2]),
-      nextIndex: index + 2,
-    }
-  }
-
-  if (mode === 2) {
-    const red = codes[index + 2]
-    const green = codes[index + 3]
-    const blue = codes[index + 4]
-
-    if ([red, green, blue].every((value) => value >= 0 && value <= 255)) {
-      return {
-        color: `rgb(${red} ${green} ${blue})`,
-        nextIndex: index + 4,
-      }
-    }
-  }
-
-  return { color: undefined, nextIndex: index }
-}
-
-function applyAnsiSgrCodes(style: AnsiStyleState, codes: Array<number>) {
-  for (let index = 0; index < codes.length; index += 1) {
-    const code = codes[index]
-
-    if (code === 0) {
-      Object.assign(style, defaultAnsiStyle())
-      continue
-    }
-
-    if (code === 1) {
-      style.bold = true
-      continue
-    }
-
-    if (code === 2) {
-      style.dim = true
-      continue
-    }
-
-    if (code === 3) {
-      style.italic = true
-      continue
-    }
-
-    if (code === 4) {
-      style.underline = true
-      continue
-    }
-
-    if (code === 22) {
-      style.bold = false
-      style.dim = false
-      continue
-    }
-
-    if (code === 23) {
-      style.italic = false
-      continue
-    }
-
-    if (code === 24) {
-      style.underline = false
-      continue
-    }
-
-    if (code === 39) {
-      style.foreground = undefined
-      continue
-    }
-
-    if (code === 49) {
-      style.background = undefined
-      continue
-    }
-
-    if (code >= 30 && code <= 37) {
-      style.foreground = ANSI_16_COLORS[code - 30]
-      continue
-    }
-
-    if (code >= 40 && code <= 47) {
-      style.background = ANSI_16_COLORS[code - 40]
-      continue
-    }
-
-    if (code >= 90 && code <= 97) {
-      style.foreground = ANSI_16_COLORS[8 + code - 90]
-      continue
-    }
-
-    if (code >= 100 && code <= 107) {
-      style.background = ANSI_16_COLORS[8 + code - 100]
-      continue
-    }
-
-    if (code === 38 || code === 48) {
-      const extended = readAnsiExtendedColor(codes, index)
-
-      if (extended.color) {
-        if (code === 38) {
-          style.foreground = extended.color
-        } else {
-          style.background = extended.color
-        }
-      }
-
-      index = extended.nextIndex
-    }
-  }
-}
-
-function findNextAnsiSequenceIndex(text: string, start: number) {
-  for (let index = start; index < text.length; index += 1) {
-    const code = text.charCodeAt(index)
-
-    if (code === 0x1b || code === 0x9b) {
-      return index
-    }
-  }
-
-  return -1
-}
-
-function parseAnsiText(text: string): Array<AnsiTextSegment> {
-  const segments: Array<AnsiTextSegment> = []
-  const style = defaultAnsiStyle()
-  let index = 0
-
-  while (index < text.length) {
-    const escIndex = findNextAnsiSequenceIndex(text, index)
-
-    if (escIndex < 0) {
-      pushAnsiTextSegment(segments, text.slice(index), style)
-      break
-    }
-
-    pushAnsiTextSegment(segments, text.slice(index, escIndex), style)
-
-    const sequence = parseAnsiSequence(text, escIndex)
-
-    if (!sequence) {
-      index = escIndex + 1
-      continue
-    }
-
-    if (sequence.kind === "sgr") {
-      applyAnsiSgrCodes(style, parseAnsiSgrParams(sequence.params))
-    }
-
-    index = sequence.end
-  }
-
-  return segments
-}
-
-function ansiSegmentStyle(
-  style?: AnsiStyleState
-): React.CSSProperties | undefined {
-  if (!style) return undefined
-
-  return {
-    color: style.foreground,
-    backgroundColor: style.background,
-    fontWeight: style.bold ? 700 : undefined,
-    fontStyle: style.italic ? "italic" : undefined,
-    opacity: style.dim ? 0.72 : undefined,
-    textDecorationLine: style.underline ? "underline" : undefined,
-  }
-}
-
-function AnsiText({ text }: { text: string }) {
-  const segments = parseAnsiText(text)
-
-  return (
-    <>
-      {segments.map((segment) => (
-        <span
-          key={`${segment.text}-${JSON.stringify(segment.style ?? {})}`}
-          style={ansiSegmentStyle(segment.style)}
-        >
-          {segment.text}
-        </span>
-      ))}
-    </>
-  )
-}
-
 function getEditDiffStats(patch: string) {
   const stats = { additions: 0, removals: 0 }
 
@@ -2224,78 +1859,103 @@ function ToolBlockCardBody({ block }: { block: AssistantToolBlock }) {
   return <DefaultToolBlockCardBody block={block} />
 }
 
-function DefaultToolBlockCardBody({ block }: { block: AssistantToolBlock }) {
-  const callText = toolCallText(block)
-  const outputText = toolOutputText(block)
-  const shellBodyText =
-    block.name === "bash"
-      ? [callText, block.output.trimEnd()].filter(Boolean).join("\n\n") ||
-        callText ||
-        outputText
-      : ""
-  const autoScroll = useRunningToolAutoScroll({
-    contentKey: shellBodyText,
-    enabled: block.name === "bash" && block.running,
-  })
-  const linkBase = toolOutputLinkBase(block)
-  const isSuccessfulEditTool =
-    block.name === "edit" && !block.running && !block.isError
-  const isSelfContainedWriteTool =
-    block.name === "write" &&
-    !block.isError &&
-    getWriteToolPayload(block)?.content !== undefined
-  const hasSelfContainedToolOutput =
-    isSuccessfulEditTool || isSelfContainedWriteTool
+/** The box of tool output that has no Code Block of its own. */
+const TOOL_OUTPUT_BOX_CLASS =
+  "max-h-96 overflow-auto rounded-lg border bg-background/80 p-3"
 
-  return (
-    <div>
-      <div
-        ref={block.name === "bash" ? autoScroll.ref : undefined}
-        onScroll={block.name === "bash" ? autoScroll.onScroll : undefined}
-        className={cn(
-          isSelfContainedWriteTool
-            ? "overflow-hidden rounded-lg"
-            : "max-h-96 overflow-auto",
-          isSuccessfulEditTool
-            ? "rounded-lg border"
-            : hasSelfContainedToolOutput
-              ? "rounded-lg"
-              : "rounded-lg border bg-background/80 p-3"
-        )}
-      >
-        {block.name === "bash" ? (
-          <pre
-            className={cn(
-              "overflow-x-auto font-mono text-xs leading-5 break-words whitespace-pre-wrap",
-              block.isError && "text-destructive"
-            )}
-          >
-            {linkBase !== undefined && !shellBodyText.includes(ANSI_ESCAPE) ? (
-              <LinkifiedOutput text={shellBodyText} />
-            ) : (
-              <AnsiText text={shellBodyText} />
-            )}
-          </pre>
-        ) : block.name === "write" ? (
-          <WriteToolOutput block={block} />
-        ) : block.name === "edit" ? (
-          <EditToolOutput block={block} />
-        ) : (
-          <div className="space-y-4">
-            {callText ? (
-              <ToolBlockSection label="Call" text={callText} />
-            ) : null}
-            <ToolBlockSection
-              isError={block.isError}
-              label={block.running ? "Output (streaming)" : "Output"}
-              linkBase={linkBase}
-              text={outputText}
-            />
-          </div>
-        )}
+function DefaultToolBlockCardBody({ block }: { block: AssistantToolBlock }) {
+  if (block.name === "bash") return <BashToolOutput block={block} />
+  if (block.name === "write") {
+    const selfContained =
+      !block.isError && getWriteToolPayload(block)?.content !== undefined
+    return selfContained ? (
+      <WriteToolOutput block={block} />
+    ) : (
+      <div className={TOOL_OUTPUT_BOX_CLASS}>
+        <WriteToolOutput block={block} />
       </div>
+    )
+  }
+  if (block.name === "edit") {
+    const isSuccessfulEdit = !block.running && !block.isError
+    return (
+      <div
+        className={
+          isSuccessfulEdit
+            ? "max-h-96 overflow-auto rounded-lg border"
+            : TOOL_OUTPUT_BOX_CLASS
+        }
+      >
+        <EditToolOutput block={block} />
+      </div>
+    )
+  }
+  if (block.name === "read") {
+    const code = readToolCode(block)
+    if (code)
+      return (
+        <CodeBlock
+          className="flex max-h-96 flex-col rounded-lg"
+          code={code.text}
+          language={code.language}
+          preClassName="min-h-0 overflow-auto"
+        />
+      )
+  }
+
+  const callText = toolCallText(block)
+  return (
+    <div className={cn(TOOL_OUTPUT_BOX_CLASS, "space-y-4")}>
+      {callText ? <ToolBlockSection label="Call" text={callText} /> : null}
+      <ToolBlockSection
+        isError={block.isError}
+        label={block.running ? "Output (streaming)" : "Output"}
+        linkBase={toolOutputLinkBase(block)}
+        text={toolOutputText(block)}
+      />
     </div>
   )
+}
+
+/** A shell call as a Terminal: the command, then its output in color. */
+function BashToolOutput({ block }: { block: AssistantToolBlock }) {
+  const callText = toolCallText(block)
+  const text =
+    [callText, block.output.trimEnd()].filter(Boolean).join("\n\n") ||
+    callText ||
+    toolOutputText(block)
+  const autoScroll = useRunningToolAutoScroll<HTMLPreElement>({
+    contentKey: text,
+    enabled: block.running,
+  })
+  const linkBase = toolOutputLinkBase(block)
+
+  return (
+    <Terminal
+      contentRef={autoScroll.ref}
+      onScroll={autoScroll.onScroll}
+      isError={block.isError}
+    >
+      {linkBase !== undefined && !text.includes(ANSI_ESCAPE) ? (
+        <LinkifiedOutput text={text} />
+      ) : (
+        <AnsiText text={text} />
+      )}
+    </Terminal>
+  )
+}
+
+/**
+ * The code of a successful read, for a highlighted Code Block. Undefined
+ * when the file type has no highlighter or the read returned no text.
+ */
+function readToolCode(block: AssistantToolBlock) {
+  if (block.running || block.isError) return undefined
+  const text = block.output.trimEnd()
+  if (!text) return undefined
+  const path = getToolArgText(normalizeToolArgs(block.args), "path")
+  const language = path ? codeLanguageFromPath(path) : undefined
+  return language ? { text, language } : undefined
 }
 
 const REMEMBERED_TOOL_COLLAPSIBLE_STATE_LIMIT = 500
@@ -2408,13 +2068,8 @@ function ToolBlockCardContent({
   const bodyBlock = useAssistantToolBlockBody(store, blockKey, isOpen)
 
   return (
-    <Collapsible
-      data-conversation-row="true"
-      open={isOpen}
-      onOpenChange={setIsOpen}
-      className="text-sm"
-    >
-      <ToolRowTrigger
+    <Tool open={isOpen} onOpenChange={setIsOpen}>
+      <ToolHeader
         isError={header.isError}
         label={toolDisplayName(header.name)}
         running={header.running}
@@ -2426,59 +2081,14 @@ function ToolBlockCardContent({
         {header.editStats ? (
           <EditDiffStatCountsView stats={header.editStats} />
         ) : null}
-      </ToolRowTrigger>
-
+      </ToolHeader>
       {isOpen && bodyBlock ? (
-        <CollapsibleContent className="overflow-hidden text-sm data-open:animate-accordion-down data-closed:animate-accordion-up">
-          <div className="h-(--collapsible-panel-height) pt-2 data-ending-style:h-0 data-starting-style:h-0">
-            <ToolBlockCardBody block={bodyBlock} />
-          </div>
-        </CollapsibleContent>
+        <ToolContent>
+          <ToolBlockCardBody block={bodyBlock} />
+        </ToolContent>
       ) : null}
       <ToolResultImages images={header.images} />
-    </Collapsible>
-  )
-}
-
-/**
- * The header of a tool card: one line of text, like a hidden thinking row.
- * The color of the label shows a running or failed tool.
- */
-function ToolRowTrigger({
-  children,
-  isError,
-  label,
-  running,
-  summary,
-  summaryClassName,
-}: {
-  children?: React.ReactNode
-  isError: boolean
-  label: React.ReactNode
-  running: boolean
-  summary: React.ReactNode
-  summaryClassName?: string
-}) {
-  return (
-    <CollapsibleTrigger
-      data-conversation-tool-collapsible-trigger="true"
-      className="group/tool-collapsible-trigger -ml-0.5 flex max-w-full min-w-0 items-center gap-1 rounded-sm text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-    >
-      <ChevronRightIcon className="pointer-events-none size-3.5 shrink-0 transition-transform group-aria-expanded/tool-collapsible-trigger:rotate-90" />
-      <span
-        className={cn(
-          "shrink-0 font-medium whitespace-nowrap",
-          running && "text-amber-600 dark:text-amber-400",
-          isError && "text-destructive"
-        )}
-      >
-        {label}
-      </span>
-      <span className={cn("ml-0.5 min-w-0 truncate", summaryClassName)}>
-        {summary}
-      </span>
-      {children ? <span className="ml-1 shrink-0">{children}</span> : null}
-    </CollapsibleTrigger>
+    </Tool>
   )
 }
 
@@ -2488,45 +2098,31 @@ function ExploreToolGroupCardBody({
   blocks: Array<AssistantToolBlock>
 }) {
   return (
-    <div>
-      <div className="max-h-96 overflow-auto rounded-lg border bg-background/80 p-3">
-        <div className="space-y-3">
-          {blocks.map((block, index) => {
-            const line = exploreToolLine(block)
-            const lineText = line.details || toolSummary(block)
+    <ChainOfThoughtSteps>
+      {blocks.map((block, index) => {
+        const line = exploreToolLine(block)
+        const lineText = line.details || toolSummary(block)
 
-            return (
-              <div
-                key={
-                  block.blockKey ||
-                  block.callId ||
-                  `${block.name || "tool"}:${index}`
-                }
-                className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-3 text-sm"
-              >
-                <span className="truncate font-medium whitespace-nowrap text-foreground">
-                  {line.label}
-                </span>
-                <span
-                  className={cn(
-                    "no-scrollbar overflow-x-auto whitespace-nowrap text-muted-foreground",
-                    block.isError && "text-destructive"
-                  )}
-                >
-                  {"file" in line && line.file ? (
-                    <FileLinkText reference={line.file}>
-                      {lineText}
-                    </FileLinkText>
-                  ) : (
-                    lineText
-                  )}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    </div>
+        return (
+          <ChainOfThoughtStep
+            key={
+              block.blockKey ||
+              block.callId ||
+              `${block.name || "tool"}:${index}`
+            }
+            isError={block.isError}
+            label={line.label}
+            description={
+              "file" in line && line.file ? (
+                <FileLinkText reference={line.file}>{lineText}</FileLinkText>
+              ) : (
+                lineText
+              )
+            }
+          />
+        )
+      })}
+    </ChainOfThoughtSteps>
   )
 }
 
@@ -2542,33 +2138,24 @@ const ExploreToolGroupCard = React.memo(function ExploreToolGroupCard({
     header.openStateKey
   )
   const blocks = useAssistantToolGroupBodyBlocks(store, blockKeys, isOpen)
-  const statusLabel = exploreGroupStatusLabel()
 
   if (header.count === 0) return null
 
   return (
-    <Collapsible
-      data-conversation-row="true"
-      open={isOpen}
-      onOpenChange={setIsOpen}
-      className="text-sm"
-    >
-      <ToolRowTrigger
+    <ChainOfThought open={isOpen} onOpenChange={setIsOpen}>
+      <ChainOfThoughtHeader
         isError={!header.hasRunning && header.hasError}
-        label={statusLabel}
+        label={exploreGroupStatusLabel()}
         running={header.hasRunning}
         summary={header.summary}
       />
-
       {isOpen ? (
-        <CollapsibleContent className="overflow-hidden text-sm data-open:animate-accordion-down data-closed:animate-accordion-up">
-          <div className="h-(--collapsible-panel-height) pt-2 data-ending-style:h-0 data-starting-style:h-0">
-            <ExploreToolGroupCardBody blocks={blocks} />
-          </div>
-        </CollapsibleContent>
+        <ChainOfThoughtContent>
+          <ExploreToolGroupCardBody blocks={blocks} />
+        </ChainOfThoughtContent>
       ) : null}
       <ToolResultImages images={header.images} />
-    </Collapsible>
+    </ChainOfThought>
   )
 })
 
@@ -3030,11 +2617,14 @@ export function assistantMessageHasFooterMeta(
 const AssistantBlockGroupView = React.memo(function AssistantBlockGroupView({
   descriptor,
   hideThinking,
+  isLast,
   store,
   streaming,
 }: {
   descriptor: AssistantBlockGroupDescriptor
   hideThinking: boolean
+  /** The last block of the message: it is the one that streams. */
+  isLast: boolean
   store: AssistantBlockStore
   streaming: boolean
 }) {
@@ -3052,6 +2642,7 @@ const AssistantBlockGroupView = React.memo(function AssistantBlockGroupView({
       blockKey={descriptor.blockKey}
       blockType={descriptor.blockType}
       hideThinking={hideThinking}
+      isLast={isLast}
       store={store}
       streaming={streaming}
     />
@@ -3088,12 +2679,14 @@ function AssistantSingleBlockGroupView({
   blockKey,
   blockType,
   hideThinking,
+  isLast,
   store,
   streaming,
 }: {
   blockKey: string
   blockType: AssistantConversationBlock["type"]
   hideThinking: boolean
+  isLast: boolean
   store: AssistantBlockStore
   streaming: boolean
 }) {
@@ -3105,6 +2698,7 @@ function AssistantSingleBlockGroupView({
     return (
       <CollapsedThinkingBlock
         blockKey={blockKey}
+        isLast={isLast}
         store={store}
         streaming={streaming}
       />
@@ -3129,9 +2723,9 @@ function ThinkingBlockBody({
   text: string
 }) {
   return (
-    <section className="border-l-2 border-amber-500/45 pl-4 text-sm text-muted-foreground">
+    <ReasoningText>
       <MarkdownBlock text={text} streaming={streaming} />
-    </section>
+    </ReasoningText>
   )
 }
 
@@ -3172,10 +2766,12 @@ function OpenThinkingBlockBody({
  */
 function CollapsedThinkingBlock({
   blockKey,
+  isLast,
   store,
   streaming,
 }: {
   blockKey: string
+  isLast: boolean
   store: AssistantBlockStore
   streaming: boolean
 }) {
@@ -3185,28 +2781,22 @@ function CollapsedThinkingBlock({
   )
 
   return (
-    <Collapsible
-      data-conversation-row="true"
-      open={isOpen}
-      onOpenChange={setIsOpen}
-    >
-      <CollapsibleTrigger
-        data-conversation-tool-collapsible-trigger="true"
-        className="group/thinking-trigger -ml-0.5 flex max-w-full items-center gap-1 rounded-sm text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-      >
-        <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-aria-expanded/thinking-trigger:rotate-90" />
-        <span className="truncate">{label || "Thinking"}</span>
-      </CollapsibleTrigger>
+    <Reasoning open={isOpen} onOpenChange={setIsOpen}>
+      <ReasoningTrigger
+        label={label || "Thinking"}
+        // Only the thinking that streams now shimmers.
+        streaming={streaming && isLast}
+      />
       {isOpen ? (
-        <CollapsibleContent className="pt-2">
+        <TraceCollapsibleContent>
           <OpenThinkingBlockBody
             blockKey={blockKey}
             store={store}
             streaming={streaming}
           />
-        </CollapsibleContent>
+        </TraceCollapsibleContent>
       ) : null}
-    </Collapsible>
+    </Reasoning>
   )
 }
 
@@ -3277,27 +2867,16 @@ function AssistantWorkGroup({
       data-conversation-assistant-block="true"
       data-conversation-assistant-block-type="work"
     >
-      <Collapsible
-        data-conversation-row="true"
-        open={isOpen}
-        onOpenChange={setIsOpen}
-        className="text-sm"
-      >
-        <CollapsibleTrigger
-          data-conversation-tool-collapsible-trigger="true"
-          className="group/work-trigger -ml-0.5 flex max-w-full items-center gap-1 rounded-sm text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-aria-expanded/work-trigger:rotate-90" />
-          <span className="truncate">{label}</span>
-        </CollapsibleTrigger>
+      <ChainOfThought open={isOpen} onOpenChange={setIsOpen}>
+        <ChainOfThoughtHeader label={label} />
         {isOpen ? (
-          <CollapsibleContent className="pt-3">
+          <ChainOfThoughtContent innerClassName="pt-3">
             <div className={cn("flex flex-col gap-4", COMPACT_ROWS_CLASS)}>
               {children}
             </div>
-          </CollapsibleContent>
+          </ChainOfThoughtContent>
         ) : null}
-      </Collapsible>
+      </ChainOfThought>
     </div>
   )
 }
@@ -3317,11 +2896,13 @@ function AssistantBlockGroupsView({
   const answerStart = workLabel ? finalAnswerStartIndex(renderedBlocks) : -1
   const workGroups = answerStart > 0 ? renderedBlocks.slice(0, answerStart) : []
 
+  const lastGroup = renderedBlocks.at(-1)
   const renderGroup = (descriptor: AssistantBlockGroupDescriptor) => (
     <AssistantBlockGroupView
       key={descriptor.key}
       descriptor={descriptor}
       hideThinking={hideThinking}
+      isLast={descriptor === lastGroup}
       store={store}
       streaming={streaming}
     />

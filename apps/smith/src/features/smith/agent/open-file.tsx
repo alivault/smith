@@ -6,6 +6,7 @@
 import { FileSymlinkIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace"
 import { openFileInViewer, useFileLinkScope } from "@/features/smith/file-links"
 import {
   registerToolRenderer,
@@ -40,12 +41,13 @@ function OpenFileCard({ block, fallback }: ToolRendererProps) {
   const label = formatFileReference({ ...reference, path: details.path })
   const note = details.note ?? toolArgs(block).note
   return (
-    <div
-      data-conversation-row="true"
-      className="flex max-w-full min-w-0 items-center gap-1.5 text-sm text-muted-foreground"
-    >
-      <FileSymlinkIcon className="size-3.5 shrink-0" aria-hidden="true" />
-      <span className="shrink-0 font-medium whitespace-nowrap">Opened</span>
+    <TraceLine data-conversation-row="true" className="gap-1.5">
+      <TraceIcon>
+        <FileSymlinkIcon />
+      </TraceIcon>
+      <TraceTitle className="shrink-0 overflow-visible font-medium whitespace-nowrap">
+        Opened
+      </TraceTitle>
       <span className="min-w-0 truncate font-mono text-[0.92em] text-foreground">
         {label}
       </span>
@@ -67,7 +69,7 @@ function OpenFileCard({ block, fallback }: ToolRendererProps) {
       >
         Open
       </Button>
-    </div>
+    </TraceLine>
   )
 }
 

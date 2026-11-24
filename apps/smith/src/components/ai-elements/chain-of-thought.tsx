@@ -1,0 +1,107 @@
+import * as React from "react"
+
+import {
+  Trace,
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceLine,
+  TraceSummary,
+  TraceTitle,
+} from "@/components/ui/trace"
+import { cn } from "@/lib/utils"
+
+/**
+ * Chain of Thought, the AI Elements pattern
+ * (https://ui.shadcn.com/docs/ai-elements/base/chain-of-thought): a summary
+ * line, as "Worked for 4m 3s" or "Explore 2 reads", that opens into the
+ * steps behind it.
+ */
+function ChainOfThought(props: React.ComponentProps<typeof TraceCollapsible>) {
+  return <TraceCollapsible data-conversation-row="true" {...props} />
+}
+
+function ChainOfThoughtHeader({
+  isError = false,
+  label,
+  running = false,
+  summary,
+}: {
+  isError?: boolean
+  label: React.ReactNode
+  running?: boolean
+  summary?: React.ReactNode
+}) {
+  return (
+    <TraceCollapsibleTrigger data-conversation-tool-collapsible-trigger="true">
+      <TraceLine status={running ? "running" : isError ? "error" : undefined}>
+        <TraceTitle className={cn(summary && "shrink-0 font-medium")}>
+          {label}
+        </TraceTitle>
+        {summary ? <TraceSummary>{summary}</TraceSummary> : null}
+      </TraceLine>
+    </TraceCollapsibleTrigger>
+  )
+}
+
+function ChainOfThoughtContent(
+  props: React.ComponentProps<typeof TraceCollapsibleContent>
+) {
+  return <TraceCollapsibleContent {...props} />
+}
+
+/** The steps of an open chain, in a box. */
+function ChainOfThoughtSteps({
+  className,
+  ...props
+}: React.ComponentProps<typeof Trace>) {
+  return (
+    <Trace
+      className={cn(
+        "max-h-96 gap-3 overflow-auto rounded-lg border bg-background/80 p-3",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/** One step: what it did, and on what. */
+function ChainOfThoughtStep({
+  description,
+  isError = false,
+  label,
+  running = false,
+}: {
+  description: React.ReactNode
+  isError?: boolean
+  label: React.ReactNode
+  running?: boolean
+}) {
+  return (
+    <TraceLine
+      status={running ? "running" : undefined}
+      className="w-full gap-3"
+    >
+      <TraceTitle className="shrink-0 font-medium text-foreground">
+        {label}
+      </TraceTitle>
+      <span
+        className={cn(
+          "no-scrollbar min-w-0 overflow-x-auto whitespace-nowrap",
+          isError && "text-destructive"
+        )}
+      >
+        {description}
+      </span>
+    </TraceLine>
+  )
+}
+
+export {
+  ChainOfThought,
+  ChainOfThoughtHeader,
+  ChainOfThoughtContent,
+  ChainOfThoughtSteps,
+  ChainOfThoughtStep,
+}
