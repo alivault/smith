@@ -52,8 +52,9 @@ async function repo() {
   return cwd
 }
 
+// The subject is the field before the email, the last field.
 const subjects = (rows: Array<string> | null) =>
-  (rows ?? []).map((line) => line.split("\u001f").at(-1))
+  (rows ?? []).map((line) => line.split("\u001f").at(-2))
 
 void test("git search finds commits by message, ignoring case", async () => {
   const cwd = await repo()
@@ -69,6 +70,7 @@ void test("git search finds commits by message, ignoring case", async () => {
   assert.match(hashes!, /^[0-9a-f]+\t[0-9a-f]{40}$/)
   assert.match(parents!, /^[0-9a-f]{40}$/)
   assert.equal(author, "Bob")
+  assert.equal(result.commits![0]!.split("\u001f").at(-1), "<dev@example.com>")
   // The default mode is message, and the text is literal, not a pattern.
   const literal = await git.searchCommits(cwd, null, "a.d", undefined)
   assert.deepEqual(literal.commits, [])
@@ -137,6 +139,22 @@ void test("git search rejects bad input", async () => {
   await rejects("message", "x".repeat(201))
   await rejects("message", "two\nlines")
   await rejects("regex", "a")
+})
+
+void test("the history rows end with the author email", async () => {
+  const cwd = await repo()
+  const changes = await git.changes(cwd, "commits", 10)
+  const fields = changes.commits![0]!.split("\u001f")
+  assert.equal(fields.length, 7)
+  assert.equal(fields[5], "Remove needle")
+  assert.equal(fields[6], "<dev@example.com>")
+})
+
+void test("git gives the full message of a commit", async () => {
+  const cwd = await repo()
+  run(cwd, ["commit", "-q", "--allow-empty", "-m", "Title", "-m", "Body line"])
+  assert.equal(await git.commitMessage(cwd, "HEAD"), "Title\n\nBody line")
+  await assert.rejects(git.commitMessage(cwd, "--all"), { status: 400 })
 })
 
 void test("git search outside a repository gives no commits", async () => {

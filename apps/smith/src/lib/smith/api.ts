@@ -707,6 +707,16 @@ export type GitCommitFilesResponse =
     }
   | ApiErrorResponse
 
+export type GitCommitBodyResponse =
+  | {
+      ok: true
+      cwd: string
+      commit: string
+      /** The full message: the subject and the body. */
+      message: string
+    }
+  | ApiErrorResponse
+
 export type GitCommitRemoteUrlResponse =
   | {
       ok: true

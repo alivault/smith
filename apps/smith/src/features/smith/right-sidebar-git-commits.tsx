@@ -63,6 +63,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+  createHoverCardHandle,
+  type HoverCardHandle,
+} from "@/components/ui/hover-card"
 import { Input } from "@/components/ui/input"
 import {
   InputGroup,
@@ -107,6 +114,7 @@ import {
   linearizeGitCommitLines,
 } from "@/features/smith/right-sidebar-git-search"
 import { EmptyState } from "@/features/smith/right-sidebar-issues"
+import { GitAuthorAvatar } from "@/features/smith/git-author-avatar"
 import { useMachineFeature } from "@/features/smith/machine-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { GitSection } from "@/features/smith/right-sidebar-git-section"
@@ -121,6 +129,7 @@ import type {
 } from "@/features/smith/right-sidebar-types"
 import type {
   GitActionResponse,
+  GitCommitBodyResponse,
   GitCommitDiffMode,
   GitCommitFile,
   GitCommitFilesResponse,
@@ -132,6 +141,7 @@ import { useMachineId } from "@/lib/smith/machine-context"
 
 type GitCommitRemoteUrlData = Extract<GitCommitRemoteUrlResponse, { ok: true }>
 type GitCommitFilesData = Extract<GitCommitFilesResponse, { ok: true }>
+type GitCommitBodyData = Extract<GitCommitBodyResponse, { ok: true }>
 
 const GIT_GRAPH_LANE_COLORS = [
   "#0ea5e9",
@@ -144,8 +154,22 @@ const GIT_GRAPH_LANE_COLORS = [
 const GIT_GRAPH_NULL_VERTEX_ID = -1
 const GIT_GRAPH_ROW_HEIGHT = 32
 const GIT_GRAPH_COMMIT_DETAILS_HEIGHT = 200
-const GIT_GRAPH_LANE_WIDTH = 14
-const GIT_GRAPH_OFFSET_X = 12
+const GIT_GRAPH_LANE_WIDTH = 16
+const GIT_GRAPH_OFFSET_X = 14
+// The author avatar at each commit, in place of a dot.
+const GIT_GRAPH_AVATAR_SIZE = 16
+// The space between the right lane's avatar and the commit title.
+const GIT_GRAPH_TITLE_GAP = 4
+
+/** The width of the graph column: the commit titles start after it. */
+function gitCommitGraphWidth(maxLaneCount: number) {
+  return (
+    GIT_GRAPH_OFFSET_X +
+    (Math.max(1, maxLaneCount) - 1) * GIT_GRAPH_LANE_WIDTH +
+    GIT_GRAPH_AVATAR_SIZE / 2 +
+    GIT_GRAPH_TITLE_GAP
+  )
+}
 
 type GitCommitAction =
   | "checkout"
@@ -632,13 +656,13 @@ function GitCommitPageGraph({
   const { branches, maxLaneCount, rows } = buildGitCommitGraphRows(lines)
   const rowHeights = gitCommitGraphRowHeights(rows, openCommitValues)
   const rowTops = gitCommitGraphRowTops(rowHeights)
-  const width = Math.max(24, maxLaneCount * GIT_GRAPH_LANE_WIDTH + 4)
+  const width = gitCommitGraphWidth(maxLaneCount)
   const height = Math.max(
     GIT_GRAPH_ROW_HEIGHT,
     gitCommitGraphTotalHeight(rowHeights)
   )
   const paths: Array<React.ReactElement> = []
-  const circles: Array<React.ReactElement> = []
+  const avatars: Array<React.ReactElement> = []
 
   branches.forEach((branch, branchIndex) => {
     branch.getLines().forEach((line, lineIndex) => {
@@ -660,30 +684,46 @@ function GitCommitPageGraph({
 
     const x = row.commitLane * GIT_GRAPH_LANE_WIDTH + GIT_GRAPH_OFFSET_X
     const y = gitCommitGraphRowCenter(rowTops, rowIndex)
-    const active = Boolean(
+    const unpushed = Boolean(
       row.parsed.fullHash && unpushedCommitHashes.has(row.parsed.fullHash)
     )
-    circles.push(
-      <circle
-        key={`circle:${row.parsed.fullHash || rowIndex}`}
-        cx={x}
-        cy={y}
-        r="4"
-        fill={gitGraphLaneColor(row.colour, active)}
+    // A ring in the lane color joins the avatar to its lines. A commit that
+    // is not pushed yet has a thicker ring in the warning color, as its dot
+    // had before.
+    const ring = gitGraphLaneColor(row.colour, unpushed)
+    avatars.push(
+      <GitAuthorAvatar
+        key={`avatar:${row.parsed.fullHash || rowIndex}`}
+        name={row.parsed.author}
+        email={row.parsed.email}
+        size={GIT_GRAPH_AVATAR_SIZE}
+        className="absolute"
+        style={{
+          left: x - GIT_GRAPH_AVATAR_SIZE / 2,
+          top: y - GIT_GRAPH_AVATAR_SIZE / 2,
+          boxShadow: unpushed
+            ? `0 0 0 2px ${ring}, 0 0 0 3px var(--background)`
+            : `0 0 0 1.5px ${ring}`,
+        }}
       />
     )
   })
 
   return (
-    <svg
+    <div
       aria-hidden
-      viewBox={`0 0 ${width} ${height}`}
-      className="pointer-events-none absolute top-0 left-0 z-10 overflow-visible"
+      className="pointer-events-none absolute top-0 left-0 z-10"
       style={{ width, height }}
     >
-      {paths}
-      {circles}
-    </svg>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="absolute top-0 left-0 overflow-visible"
+        style={{ width, height }}
+      >
+        {paths}
+      </svg>
+      {avatars}
+    </div>
   )
 }
 
@@ -1290,6 +1330,9 @@ type GitCommitRowProps = {
   value: string
   /** Text to show in bold in the commit title (a message search). */
   highlight?: string
+  /** The card that shows the commit when the pointer rests on the row. */
+  hoverCard: HoverCardHandle<GitCommitHoverPayload>
+  unpushed: boolean
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
 }
 
@@ -1304,6 +1347,8 @@ function useGitCommitRowView({
   line,
   value,
   highlight = "",
+  hoverCard,
+  unpushed,
   onOpenCommitDiff,
 }: GitCommitRowProps) {
   const machineId = useMachineId()
@@ -1682,7 +1727,15 @@ function useGitCommitRowView({
 
   return (
     <AccordionItem value={value} className="border-0">
-      <div className="group/commit-row relative min-w-0">
+      <HoverCardTrigger
+        handle={hoverCard}
+        payload={{ line, unpushed }}
+        delay={GIT_COMMIT_HOVER_CARD_DELAY}
+        closeDelay={100}
+        render={<div className="group/commit-row relative min-w-0" />}
+        // A click opens the row or its menu: the card would cover them.
+        onPointerDown={() => hoverCard.close()}
+      >
         <ContextMenu
           key={contextMenuKey}
           open={contextMenuOpen}
@@ -1697,7 +1750,7 @@ function useGitCommitRowView({
             runAction={runContextAction}
           />
         </ContextMenu>
-      </div>
+      </HoverCardTrigger>
       <AccordionContent className="relative h-[200px] border-b border-border/70 bg-muted/50 p-0">
         <div
           ref={setCommitBodyGradientElement}
@@ -1907,6 +1960,178 @@ function useGitCommitRowView({
   )
 }
 
+type GitCommitHoverPayload = { line: string; unpushed: boolean }
+
+const GIT_COMMIT_HOVER_CARD_DELAY = 400
+
+const gitCommitHoverDateFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
+
+function formatGitCommitHoverDate(value: string) {
+  const date = new Date(value.trim())
+  return value.trim() && !Number.isNaN(date.getTime())
+    ? gitCommitHoverDateFormatter.format(date)
+    : ""
+}
+
+/**
+ * One card for all the rows of a list: the author, the date, the hash, and
+ * the full message of the commit under the pointer.
+ */
+function GitCommitHoverCard({
+  handle,
+  viewerContextId,
+  cwd,
+}: {
+  handle: HoverCardHandle<GitCommitHoverPayload>
+  viewerContextId: string
+  cwd: string
+}) {
+  return (
+    <HoverCard<GitCommitHoverPayload>
+      handle={handle}
+      onOpenChange={(open, details) => {
+        // Only the mouse opens it. Focus moves through the list with the
+        // keyboard, and a card for each row would get in the way.
+        if (open && details.reason !== "trigger-hover") details.cancel()
+      }}
+    >
+      {({ payload }) =>
+        payload ? (
+          <HoverCardContent
+            side="left"
+            align="start"
+            sideOffset={8}
+            className="w-80 p-3"
+          >
+            <GitCommitHoverCardBody
+              key={payload.line}
+              viewerContextId={viewerContextId}
+              cwd={cwd}
+              line={payload.line}
+              unpushed={payload.unpushed}
+            />
+          </HoverCardContent>
+        ) : null
+      }
+    </HoverCard>
+  )
+}
+
+function GitCommitHoverCardBody({
+  viewerContextId,
+  cwd,
+  line,
+  unpushed,
+}: {
+  viewerContextId: string
+  cwd: string
+  line: string
+  unpushed: boolean
+}) {
+  const machineId = useMachineId()
+  const bodyAvailable = useMachineFeature("git-commit-body")
+  const parsed = parseGitCommitGraphLine(line)
+  const shortHash = parsed.hash || parsed.fullHash.slice(0, 7)
+  const [hashCopied, setHashCopied] = React.useState(false)
+  const bodyQuery = useQuery({
+    queryKey: smithQueryKeys.gitCommitBody(
+      viewerContextId,
+      cwd,
+      parsed.fullHash
+    ),
+    queryFn: () =>
+      fetchJson<GitCommitBodyData>(
+        buildRequestUrl(
+          `/api/git-commit-body?cwd=${encodeURIComponent(cwd)}&commit=${encodeURIComponent(
+            parsed.fullHash
+          )}`,
+          { machineId, contextId: viewerContextId }
+        )
+      ),
+    enabled: Boolean(
+      bodyAvailable && viewerContextId && cwd && parsed.fullHash
+    ),
+    // A commit's message does not change.
+    staleTime: Infinity,
+    retry: false,
+  })
+  React.useEffect(() => {
+    if (!hashCopied) return
+    const timer = window.setTimeout(() => setHashCopied(false), 1200)
+    return () => window.clearTimeout(timer)
+  }, [hashCopied])
+
+  const message = bodyQuery.data?.message.trim() || parsed.subject.trim()
+  const newline = message.indexOf("\n")
+  const title = newline < 0 ? message : message.slice(0, newline).trim()
+  const body = newline < 0 ? "" : message.slice(newline + 1).trim()
+  const date = formatGitCommitHoverDate(parsed.fullDate)
+  const relative = formatGitCommitDetailTime(parsed.relativeDate)
+
+  return (
+    <div className="grid min-w-0 gap-2.5 text-xs leading-4">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <GitAuthorAvatar name={parsed.author} email={parsed.email} size={32} />
+        <div className="grid min-w-0 gap-0.5">
+          <div className="truncate text-[13px] leading-5 font-medium text-foreground">
+            {parsed.author || "Unknown author"}
+          </div>
+          {parsed.email ? (
+            <div className="truncate text-muted-foreground">{parsed.email}</div>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground">
+        {date ? <span>{date}</span> : null}
+        {date && relative ? <span aria-hidden>·</span> : null}
+        {relative ? <span>{relative}</span> : null}
+        {parsed.fullHash ? (
+          <button
+            type="button"
+            aria-label={hashCopied ? "Copied" : "Copy full commit hash"}
+            className="ml-auto inline-flex items-center gap-1 rounded-sm px-1 py-0.5 font-mono text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            onClick={() => {
+              void copyGitCommitValue(parsed.fullHash).then((copied) => {
+                if (copied) setHashCopied(true)
+              })
+            }}
+          >
+            {shortHash}
+            {hashCopied ? (
+              <CheckIcon className="size-3 text-emerald-500" />
+            ) : (
+              <CopyIcon className="size-3" />
+            )}
+          </button>
+        ) : null}
+      </div>
+      {unpushed ? (
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          <span
+            aria-hidden
+            className="size-2 rounded-full"
+            style={{ backgroundColor: "var(--warning)" }}
+          />
+          Not pushed yet
+        </div>
+      ) : null}
+      <div className="grid min-w-0 gap-1.5 border-t border-border/70 pt-2.5">
+        <div className="text-[13px] leading-5 break-words text-foreground">
+          {title || "No commit message"}
+        </div>
+        {body ? (
+          <div className="max-h-48 overflow-y-auto break-words whitespace-pre-wrap text-muted-foreground">
+            {body}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function GitCommitRows({
   viewerContextId,
   cwd,
@@ -1923,7 +2148,7 @@ function GitCommitRows({
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
 }) {
   const { maxLaneCount, rows } = buildGitCommitGraphRows(lines)
-  const graphWidth = Math.max(24, maxLaneCount * GIT_GRAPH_LANE_WIDTH + 4)
+  const graphWidth = gitCommitGraphWidth(maxLaneCount)
   const rowValues = rows.map((row, index) => gitCommitGraphRowValue(row, index))
   const [openCommitValues, setOpenCommitValues] = React.useState<Array<string>>(
     []
@@ -1932,9 +2157,17 @@ function GitCommitRows({
     rowValues.includes(value)
   )
   const rowHeights = gitCommitGraphRowHeights(rows, visibleOpenCommitValues)
+  const [hoverCard] = React.useState(() =>
+    createHoverCardHandle<GitCommitHoverPayload>()
+  )
 
   return (
     <div className="relative min-w-0">
+      <GitCommitHoverCard
+        handle={hoverCard}
+        viewerContextId={viewerContextId}
+        cwd={cwd}
+      />
       <GitCommitPageGraph
         lines={lines}
         openCommitValues={visibleOpenCommitValues}
@@ -1963,6 +2196,10 @@ function GitCommitRows({
               line={line}
               value={rowValues[index] ?? `${index}`}
               highlight={highlight}
+              hoverCard={hoverCard}
+              unpushed={unpushedCommitHashes.has(
+                rows[index]?.parsed.fullHash ?? ""
+              )}
               onOpenCommitDiff={onOpenCommitDiff}
             />
           </div>

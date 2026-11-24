@@ -250,6 +250,7 @@ export function createApi(api: ApiContext) {
         "git-status",
         "git-history",
         "git-history-search",
+        "git-commit-body",
         "git-mutations",
         "git-watch",
         "native-pty",
@@ -1760,6 +1761,17 @@ export function createApi(api: ApiContext) {
     const commit = required(request.query.get("commit"), "commit")
     const cwd = await gitCwd(request, request.query.get("cwd"))
     return { ok: true, cwd, commit, files: await git.commitFiles(cwd, commit) }
+  })
+
+  router.get("/api/git-commit-body", async (request) => {
+    const commit = required(request.query.get("commit"), "commit")
+    const cwd = await gitCwd(request, request.query.get("cwd"))
+    return {
+      ok: true,
+      cwd,
+      commit,
+      message: await git.commitMessage(cwd, commit),
+    }
   })
 
   router.get("/api/git-commit-diff", async (request) => {

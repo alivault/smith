@@ -282,8 +282,16 @@ async function branches(cwd: string) {
   return { localBranches, remoteBranches }
 }
 
+/**
+ * One history row: `<short>\t<full>␟<parents>␟<author>␟<relative date>␟<ISO
+ * date>␟<subject>␟<<email>>` (␟ is U+001F). The email is the last field and
+ * sits in angle brackets, so it is never empty. Older web clients read the
+ * last field after the subject as a stats field that they do not show, so
+ * their subject stays correct. New clients know the email by its brackets,
+ * and read rows of older servers (no email) as before.
+ */
 const COMMIT_LOG_FORMAT =
-  "--pretty=format:%h%x09%H%x1f%P%x1f%an%x1f%ar%x1f%aI%x1f%s"
+  "--pretty=format:%h%x09%H%x1f%P%x1f%an%x1f%ar%x1f%aI%x1f%s%x1f<%ae>"
 
 async function unpushedCommits(cwd: string) {
   return (await gitAllowFailure(cwd, ["rev-list", "@{upstream}..HEAD"])).stdout
@@ -646,6 +654,17 @@ export async function commitFiles(cwd: string, commit: string) {
     ...file,
     ...counts.get(file.path),
   }))
+}
+
+/** The full message of a commit: the subject and the body. */
+export async function commitMessage(cwd: string, commit: string) {
+  validateRevision(commit)
+  const output = await git(
+    cwd,
+    ["show", "-s", "--no-show-signature", "--format=%B", commit, "--"],
+    5000
+  )
+  return output.stdout.trim()
 }
 
 export async function commitDiff(
