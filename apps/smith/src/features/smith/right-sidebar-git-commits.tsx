@@ -2010,14 +2010,12 @@ function GitCommitSearchBar({
   mode,
   input,
   loading,
-  sticky,
   onModeChange,
   onInputChange,
 }: {
   mode: GitCommitSearchMode
   input: string
   loading: boolean
-  sticky: boolean
   onModeChange: (mode: GitCommitSearchMode) => void
   onInputChange: (value: string) => void
 }) {
@@ -2028,12 +2026,7 @@ function GitCommitSearchBar({
     GIT_COMMIT_SEARCH_MODES[0]!
 
   return (
-    <div
-      className={cn(
-        "flex shrink-0 items-center bg-background px-2 pt-2 pb-1.5",
-        sticky && "sticky top-0 z-20"
-      )}
-    >
+    <div className="flex shrink-0 items-center bg-background px-2 pt-2 pb-1.5">
       <InputGroup className={cn("h-8 flex-1", isMobile && "h-11")}>
         <InputGroupAddon>
           <DropdownMenu>
@@ -2152,6 +2145,8 @@ export function GitCommitsSection({
   embedded = false,
   flush = false,
   onMetaChange,
+  scrollRef,
+  onScroll,
 }: GitScopedProps & {
   onOpenCommitDiff?: (request: GitCommitDiffTabRequest) => void
   onRestoreEmbedded?: () => void
@@ -2159,6 +2154,9 @@ export function GitCommitsSection({
   flush?: boolean
   /** The count text, for a header outside the section. */
   onMetaChange?: (meta: string) => void
+  /** The list's own scroll area, when the section fills its parent. */
+  scrollRef?: React.Ref<HTMLDivElement>
+  onScroll?: React.UIEventHandler<HTMLDivElement>
 }) {
   const machineId = useMachineId()
   const normalizedCwd = normalizeCwd(cwd)
@@ -2329,7 +2327,6 @@ export function GitCommitsSection({
         mode={searchMode}
         input={searchInput}
         loading={searchLoading}
-        sticky={embedded}
         onModeChange={setSearchMode}
         onInputChange={setSearchInput}
       />
@@ -2427,11 +2424,23 @@ export function GitCommitsSection({
     </GitSectionNote>
   )
 
+  // The search stays above the list, outside its scroll area, as in the
+  // History tab.
+  const scrollArea = (
+    <div
+      ref={scrollRef}
+      onScroll={onScroll}
+      className="safe-scroll-end min-h-0 min-w-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain"
+    >
+      <div className="grid min-w-0 gap-2">{content}</div>
+    </div>
+  )
+
   if (embedded) {
     return (
-      <div className="grid min-w-0 overflow-x-clip">
+      <div className="flex h-full min-h-0 min-w-0 flex-col">
         {searchBar}
-        <div className="grid min-w-0 gap-2">{content}</div>
+        {scrollArea}
       </div>
     )
   }
@@ -2457,9 +2466,7 @@ export function GitCommitsSection({
           ) : null}
         </div>
         {searchBar}
-        <div className="safe-scroll-end min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-          <div className="grid min-w-0 gap-2">{content}</div>
-        </div>
+        {scrollArea}
       </section>
     )
   }

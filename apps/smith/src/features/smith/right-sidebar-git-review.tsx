@@ -1063,18 +1063,16 @@ function useFileReviewContentView({
             ) : null}
           </div>
           {historyOpen ? (
-            <div
-              ref={historyScrollRef}
-              className="safe-scroll-end min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain border-t border-border/70"
-              onScroll={(event) => {
-                updateHistoryHeaderShadow(event.currentTarget)
-              }}
-            >
+            <div className="flex min-h-0 flex-1 flex-col border-t border-border/70">
               <GitCommitsSection
                 viewerContextId={viewerContextId}
                 cwd={normalizedCwd}
                 active={active && historyOpen}
                 embedded
+                scrollRef={historyScrollRef}
+                onScroll={(event) => {
+                  updateHistoryHeaderShadow(event.currentTarget)
+                }}
                 onMetaChange={setHistoryMeta}
                 onOpenCommitDiff={onOpenCommitDiff}
               />
