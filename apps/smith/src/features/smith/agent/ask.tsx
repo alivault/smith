@@ -2,6 +2,7 @@ import * as React from "react"
 import { CheckIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react"
 import { toast } from "@/lib/smith/toast"
 
+import { ImageAttachment } from "@/components/ai-elements/image-attachment"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -141,23 +142,13 @@ function PastedImages({
   return (
     <div className="flex flex-wrap gap-2">
       {images.map((image, index) => (
-        <div key={`${index}:${image.data.length}`} className="relative">
-          <img
-            src={image.previewUrl}
-            alt="Pasted image"
-            className="h-16 rounded-md border object-cover"
-          />
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost"
-            title="Remove image"
-            className="absolute top-0.5 right-0.5 size-5 rounded-full bg-background/90 shadow-sm"
-            onClick={() => onRemove(index)}
-          >
-            <XIcon className="size-3" />
-          </Button>
-        </div>
+        <ImageAttachment
+          key={`${index}:${image.data.length}`}
+          size="md"
+          alt="Pasted image"
+          src={image.previewUrl}
+          onRemove={() => onRemove(index)}
+        />
       ))}
     </div>
   )

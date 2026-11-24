@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+import { ImageAttachment } from "@/components/ai-elements/image-attachment"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { ComposerAssistMenu } from "@/features/smith/composer-assist-menu"
@@ -511,23 +512,13 @@ const ComposerAttachments = React.memo(function ComposerAttachments({
     // One line that scrolls sideways: many images do not push the text down.
     <div className="flex gap-3 overflow-x-auto overscroll-x-contain">
       {images.map((image, index) => (
-        <div key={promptImageKey(image)} className="relative shrink-0">
-          <img
-            src={image.previewUrl}
-            alt="Attachment preview"
-            className="h-20 max-w-60 rounded-lg border object-cover"
-          />
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            className="absolute top-1 right-1 rounded-full bg-background/90 p-1 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={disabled}
-            onClick={() => onRemoveImage(index)}
-          >
-            <XIcon className="size-3" />
-          </Button>
-        </div>
+        <ImageAttachment
+          key={promptImageKey(image)}
+          size="lg"
+          src={image.previewUrl}
+          disabled={disabled}
+          onRemove={() => onRemoveImage(index)}
+        />
       ))}
     </div>
   )

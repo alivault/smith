@@ -32,11 +32,11 @@ import {
   SquareTerminalIcon,
   Trash2Icon,
   Undo2Icon,
-  XIcon,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { TitleTooltip } from "@/components/ui/tooltip"
+import { ImageAttachment } from "@/components/ai-elements/image-attachment"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import {
@@ -1029,34 +1029,18 @@ export const ComposerPendingMessages = React.memo(
                                 {editing && row.images.length > 0 ? (
                                   <div className="flex flex-wrap gap-2 py-1">
                                     {row.images.map((image, imageIndex) => (
-                                      <div
+                                      <ImageAttachment
                                         key={promptImageKey(image)}
-                                        className="relative"
-                                      >
-                                        <img
-                                          src={image.previewUrl}
-                                          alt="Attachment preview"
-                                          className="h-12 rounded-md border object-cover"
-                                        />
-                                        <Button
-                                          type="button"
-                                          size="icon-xs"
-                                          variant="ghost"
-                                          title="Remove image"
-                                          className="absolute top-0.5 right-0.5 size-5 rounded-full bg-background/90 shadow-sm"
-                                          onMouseDown={keepFocus}
-                                          onClick={() =>
-                                            setImages(row.key, (images) =>
-                                              images.filter(
-                                                (_, index) =>
-                                                  index !== imageIndex
-                                              )
+                                        src={image.previewUrl}
+                                        onRemoveMouseDown={keepFocus}
+                                        onRemove={() =>
+                                          setImages(row.key, (images) =>
+                                            images.filter(
+                                              (_, index) => index !== imageIndex
                                             )
-                                          }
-                                        >
-                                          <XIcon className="size-3" />
-                                        </Button>
-                                      </div>
+                                          )
+                                        }
+                                      />
                                     ))}
                                   </div>
                                 ) : null}

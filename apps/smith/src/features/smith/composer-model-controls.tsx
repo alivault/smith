@@ -1,18 +1,19 @@
 import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { ChevronDownIcon } from "lucide-react"
 
 import type { AgentState } from "@/lib/smith"
 
+import {
+  ModelSelector,
+  ModelSelectorButton,
+  ModelSelectorContent,
+  ModelSelectorTrigger,
+} from "@/components/ai-elements/model-selector"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { TitleTooltip } from "@/components/ui/tooltip"
@@ -64,61 +65,44 @@ export const ComposerModelControls = React.memo(function ComposerModelControls({
   return (
     <div className="flex min-w-0 items-center gap-0.5">
       <TitleTooltip title="Model" kbd={formatShortcutLabel(appShortcut("M"))}>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="max-w-40 min-w-0 cursor-pointer text-muted-foreground hover:text-foreground"
+        <ModelSelectorButton
+          className="max-w-40"
           aria-label={`Model: ${label}`}
           disabled={disabled}
           onClick={onOpenModelDialog}
         >
-          <span className="truncate">{label}</span>
-          <ChevronDownIcon data-icon="inline-end" />
-        </Button>
+          {label}
+        </ModelSelectorButton>
       </TitleTooltip>
 
       {availableThinkingLevels.length > 0 ? (
-        <DropdownMenu>
+        <ModelSelector>
           <TitleTooltip
             title="Reasoning"
             kbd={`${formatShortcutLabel(appShortcut("R"))} / ${formatShortcutLabel(appShortcut("Shift+R"))}`}
           >
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
-                  aria-label={`Reasoning: ${thinkingLabel(thinkingLevel)}`}
-                  disabled={disabled}
-                />
-              }
+            <ModelSelectorTrigger
+              className="shrink-0"
+              aria-label={`Reasoning: ${thinkingLabel(thinkingLevel)}`}
+              disabled={disabled}
             >
-              <span className="truncate">{thinkingLabel(thinkingLevel)}</span>
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
+              {thinkingLabel(thinkingLevel)}
+            </ModelSelectorTrigger>
           </TitleTooltip>
-          <DropdownMenuContent side="top" align="start" className="w-48">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Reasoning</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={thinkingLevel}
-                onValueChange={(level: string) => {
-                  if (disabled) return
-                  onSelectThinkingLevel(level)
-                }}
-              >
-                {availableThinkingLevels.map((level) => (
-                  <DropdownMenuRadioItem key={level} value={level}>
-                    {thinkingLabel(level)}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          <ModelSelectorContent
+            className="w-48"
+            label="Reasoning"
+            value={thinkingLevel}
+            options={availableThinkingLevels.map((level) => ({
+              value: level,
+              label: thinkingLabel(level),
+            }))}
+            onValueChange={(level) => {
+              if (disabled) return
+              onSelectThinkingLevel(level)
+            }}
+          />
+        </ModelSelector>
       ) : null}
     </div>
   )

@@ -11,6 +11,7 @@ import {
 } from "@/features/smith/tanstack-store-utils"
 
 import { useMachineId } from "@/lib/smith/machine-context"
+import { ContextBar } from "@/components/ai-elements/context"
 import { cn } from "@/lib/utils"
 
 const contextUsageNumberFormatter = new Intl.NumberFormat("en-US")
@@ -377,23 +378,12 @@ function TooltipUsageProgress({
   const clampedPercent = Math.max(0, Math.min(100, percent))
 
   return (
-    // The track uses the text color, so it shows also on a hovered menu item.
-    <div className="relative mt-1 h-1 overflow-hidden rounded-full bg-foreground/15">
-      <div
-        className="h-full"
-        style={{
-          width: `${clampedPercent}%`,
-          backgroundColor: contextUsageStroke(clampedPercent, pacePercent),
-        }}
-      />
-      {marks.map((mark) => (
-        <div
-          key={mark}
-          className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground/60"
-          style={{ left: `${Math.max(0, Math.min(100, mark))}%` }}
-        />
-      ))}
-    </div>
+    <ContextBar
+      className="mt-1"
+      value={clampedPercent}
+      color={contextUsageStroke(clampedPercent, pacePercent)}
+      marks={marks}
+    />
   )
 }
 
@@ -822,34 +812,21 @@ export function ContextUsageBars({
           <span className="text-muted-foreground">
             {contextUsageBarLabel(ring, !labels)}
           </span>
-          <span className="relative h-1 w-10 overflow-hidden rounded-full bg-foreground/15">
-            {ring.percent == null ? null : (
-              <span
-                className="absolute inset-y-0 left-0"
-                style={{
-                  width: `${ring.percent}%`,
-                  backgroundColor: contextUsageStroke(
-                    ring.percent,
-                    ring.pacePercent
-                  ),
-                }}
-              />
-            )}
-            {/* The compaction point of the context, and how much of the
-                5h or week window passed: usage left of it is on pace. */}
-            {[
+          {/* The compaction point of the context, and how much of the
+              5h or week window passed: usage left of it is on pace. */}
+          <ContextBar
+            className="w-10"
+            value={ring.percent}
+            color={
+              ring.percent == null
+                ? undefined
+                : contextUsageStroke(ring.percent, ring.pacePercent)
+            }
+            marks={[
               ring.key === "context" ? view.compactAtPercent : null,
               ring.pacePercent,
-            ].map((mark, index) =>
-              mark == null ? null : (
-                <span
-                  key={index}
-                  className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground/60"
-                  style={{ left: `${Math.max(0, Math.min(100, mark))}%` }}
-                />
-              )
-            )}
-          </span>
+            ]}
+          />
           <span className="text-foreground/80 tabular-nums">
             {ring.percent == null
               ? "–"
