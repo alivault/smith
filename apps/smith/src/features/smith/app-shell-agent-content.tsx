@@ -107,10 +107,18 @@ export function AppShellAgentContent({
     displaySettingsStore,
     (settings) => settings.centerMessages
   )
+  const shownAgentId = agentState.draft ? undefined : agentState.agentId
+  // Set after the cards of a loaded conversation mount, so that only cards
+  // that appear later count as new (see ask.tsx).
+  const liveAgentRef = React.useRef<string | undefined>(undefined)
+  React.useEffect(() => {
+    liveAgentRef.current = isAgentViewLoading ? undefined : shownAgentId
+  }, [isAgentViewLoading, shownAgentId])
   const toolRenderContext = {
     viewerContextId,
-    agentId: agentState.draft ? undefined : agentState.agentId,
+    agentId: shownAgentId,
     cwd: agentState.cwd,
+    liveAgentRef,
   }
   const machineId = useMachineId()
   const editAgentId = toolRenderContext.agentId
@@ -187,6 +195,7 @@ export function AppShellAgentContent({
   return (
     <div
       {...fileDrop.handlers}
+      data-smith-agent-content="true"
       className="relative flex min-h-0 flex-1 flex-col"
     >
       <ToolRenderContext.Provider value={toolRenderContext}>

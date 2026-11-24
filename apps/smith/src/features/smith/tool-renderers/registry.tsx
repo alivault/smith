@@ -41,6 +41,12 @@ export type ToolRenderContextValue = {
   viewerContextId: string
   agentId?: string
   cwd?: string
+  /**
+   * The agent whose conversation shows and has loaded. A card that appears
+   * while its agent is here is new; a card that comes with the loaded
+   * conversation is not.
+   */
+  liveAgentRef?: React.RefObject<string | undefined>
 }
 
 export const ToolRenderContext = React.createContext<ToolRenderContextValue>({

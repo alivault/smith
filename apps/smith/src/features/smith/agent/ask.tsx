@@ -165,6 +165,76 @@ function submitOnCommandEnter(event: React.KeyboardEvent, send: () => void) {
   }
 }
 
+/** Questions that had their one chance to take the focus, by card key. */
+const focusedQuestions = new Set<string>()
+
+/** Fields where the user types, which a new question must not take focus from. */
+function isTypingTarget(element: Element) {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    (element instanceof HTMLElement && element.isContentEditable) ||
+    element.closest("[role=dialog],[role=alertdialog],.xterm") !== null
+  )
+}
+
+/**
+ * Whether a new question in `card` can take the focus: on a desktop, when
+ * the composer is empty, and when the user does not type or work elsewhere.
+ * The focus can come from the page, the composer, or the conversation.
+ */
+function canQuestionTakeFocus(card: HTMLElement) {
+  if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches)
+    return false
+  const content = card.closest("[data-smith-agent-content]")
+  const composer = content?.querySelector<HTMLTextAreaElement>(
+    "textarea[name=prompt]"
+  )
+  if (composer && composer.value.trim() !== "") return false
+  const active = document.activeElement
+  if (!active || active === document.body || active === composer) return true
+  const conversation = card.closest("[data-conversation-viewport]")
+  return Boolean(conversation?.contains(active)) && !isTypingTarget(active)
+}
+
+/**
+ * Move the focus to the first choice of a question that appears while the
+ * user looks at its agent, one time, so that letter keys answer it. A
+ * question that comes with a loaded conversation does not take the focus.
+ */
+function useFocusNewQuestion(
+  cardRef: React.RefObject<HTMLElement | null>,
+  key: string | undefined
+) {
+  const { agentId, liveAgentRef } = useToolRenderContext()
+  React.useEffect(() => {
+    const card = cardRef.current
+    if (!key || !card || focusedQuestions.has(key)) return
+    const target = card.querySelector<HTMLElement>(
+      "input[type=radio],input[type=checkbox],[data-ask-yes]"
+    )
+    // The choices are not drawn yet: try again on the next render.
+    if (!target) return
+    focusedQuestions.add(key)
+    const isNew = agentId !== undefined && liveAgentRef?.current === agentId
+    if (!isNew) return
+    // The Questionnaire shows its item after its first render: wait for it,
+    // for a few frames. This runs one time for each question, so it does
+    // not stop when the card renders again.
+    let tries = 0
+    const focusWhenShown = () => {
+      if (!target.isConnected) return
+      if (target.closest("[inert],[hidden]")) {
+        if (++tries < 20) requestAnimationFrame(focusWhenShown)
+        return
+      }
+      if (canQuestionTakeFocus(card)) target.focus({ preventScroll: true })
+    }
+    focusWhenShown()
+  })
+}
+
 function ConfirmButtons({
   disabled,
   onAnswer,
@@ -174,7 +244,12 @@ function ConfirmButtons({
 }) {
   return (
     <>
-      <Button size="sm" disabled={disabled} onClick={() => onAnswer("yes", [])}>
+      <Button
+        size="sm"
+        data-ask-yes="true"
+        disabled={disabled}
+        onClick={() => onAnswer("yes", [])}
+      >
         <CheckIcon /> Yes
       </Button>
       <Button
@@ -193,7 +268,8 @@ function ConfirmButtons({
  * A choice question as a Questionnaire
  * (https://ui.shadcn.com/docs/components/base/questionnaire): one choice
  * answers at once; several choices, or another answer, send with Send.
- * Letters choose with the keyboard.
+ * Letters choose with the keyboard while the question has the focus; the
+ * letters show only then.
  */
 function ChoiceQuestionForm({
   allowOther,
@@ -213,7 +289,7 @@ function ChoiceQuestionForm({
   const name = "answer"
   return (
     <Questionnaire
-      className="gap-3"
+      className="gap-3 [&:not(:focus-within)_[data-slot=questionnaire-choice-shortcut]]:hidden!"
       shortcuts="letters"
       onChange={(event) => {
         // One choice answers at once, as a button would.
@@ -519,16 +595,31 @@ export function QuestionCardView({
   // A yes or no question that waits shows as a Confirmation.
   const confirming =
     waiting && Boolean(questionId) && question.kind === "confirm"
-  const trackRef = useTrackWaitingCard(
+  const cardKey =
     waiting && questionId
       ? waitingCardKey(viewerContextId, agentId, questionId)
-      : undefined,
-    "question"
+      : undefined
+  const trackRef = useTrackWaitingCard(cardKey, "question")
+  const cardRef = React.useRef<HTMLDivElement | null>(null)
+  const setCardRef = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      cardRef.current = element
+      trackRef(element)
+    },
+    [trackRef]
+  )
+  useFocusNewQuestion(
+    cardRef,
+    question.kind === "choice" ||
+      question.kind === "multi" ||
+      question.kind === "confirm"
+      ? cardKey
+      : undefined
   )
 
   return (
     <div
-      ref={trackRef}
+      ref={setCardRef}
       className={cn(
         "space-y-3 rounded-xl border p-3 text-sm",
         waiting ? "border-primary/40 bg-primary/5" : "bg-muted/20"
