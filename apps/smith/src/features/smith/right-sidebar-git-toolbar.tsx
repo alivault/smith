@@ -53,7 +53,30 @@ import { useMachineId } from "@/lib/smith/machine-context"
 
 // Hide a button label when the git toolbar is narrow. The label stays for
 // screen readers.
-const narrowLabelClassName = "@max-[20rem]/git-toolbar:sr-only"
+/** Below this width, the action buttons show only their icons. */
+const NARROW_TOOLBAR_PX = 320
+
+/**
+ * Whether the element is narrower than `px`. A CSS container query did this
+ * before, but Chrome kept the container 0 px high (blank) after a switch back
+ * to an agent, when React shows its hidden shell again.
+ */
+function useNarrowerThan(px: number) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = React.useState(false)
+  React.useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0
+      // A hidden shell measures 0: keep the last value.
+      if (width > 0) setNarrow(width < px)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [px])
+  return [ref, narrow] as const
+}
 
 export function GitPanelErrorToasts({
   viewerContextId,
@@ -399,11 +422,16 @@ export function GitPanelToolbar({
   )
   const showActions =
     showCommitAction || showPushAction || showForcePushAction || showPullAction
+  const [toolbarRef, narrow] = useNarrowerThan(NARROW_TOOLBAR_PX)
+  const narrowLabelClassName = narrow ? "sr-only" : undefined
 
   return (
     // In a narrow sidebar, the action buttons show only their icons, so they
     // stay on one row with the branch.
-    <div className="@container/git-toolbar flex flex-wrap items-center justify-between gap-2">
+    <div
+      ref={toolbarRef}
+      className="flex flex-wrap items-center justify-between gap-2"
+    >
       <div className="flex min-w-0 items-center gap-1.5">
         <GitRepositorySummary
           viewerContextId={viewerContextId}
