@@ -4,7 +4,6 @@ import * as React from "react"
 import { PatchDiff } from "@pierre/diffs/react"
 import {
   CheckIcon,
-  ChevronRightIcon,
   CircleCheckIcon,
   CircleStopIcon,
   CircleXIcon,
@@ -35,11 +34,11 @@ import {
 } from "@/features/smith/tool-result-images"
 import { useSmithDiffThemeOptions } from "@/features/smith/smith-diff-theme"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import { TraceCollapsibleContent } from "@/components/ui/trace"
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+} from "@/components/ui/trace"
 import {
   ChainOfThought,
   ChainOfThoughtContent,
@@ -55,6 +54,8 @@ import {
 import { AnsiText, Terminal } from "@/components/ai-elements/terminal"
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool"
 import { Badge } from "@/components/ui/badge"
+import { Bubble, BubbleContent } from "@/components/ui/bubble"
+import { Message, MessageContent, MessageFooter } from "@/components/ui/message"
 import { Button } from "@/components/ui/button"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import {
@@ -2167,12 +2168,14 @@ const CompactionBlockCard = React.memo(function CompactionBlockCard({
   }
 }) {
   return (
-    <details className="rounded-xl border bg-muted/20 px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground">
-        <ChevronRightIcon className="size-4 text-muted-foreground" />
+    <TraceCollapsible className="rounded-xl border bg-muted/20 px-3 py-2">
+      <TraceCollapsibleTrigger
+        className="ml-0 w-full gap-2 font-medium text-foreground hover:text-foreground"
+        chevronClassName="size-4 text-muted-foreground [&_svg:not([class*='size-'])]:size-4"
+      >
         <span>{compactionTriggerText(block)}</span>
-      </summary>
-      <div className="mt-3 border-t pt-3">
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent innerClassName="mt-3 border-t pt-3">
         {block.summary.trim() ? (
           <MarkdownBlock text={block.summary} />
         ) : (
@@ -2180,8 +2183,8 @@ const CompactionBlockCard = React.memo(function CompactionBlockCard({
             No compaction summary available.
           </div>
         )}
-      </div>
-    </details>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
   )
 })
 
@@ -2257,13 +2260,13 @@ function AgentNoticeCard({
 
   return (
     // A light box sets notices apart from the tool and thinking lines.
-    <Collapsible
+    <TraceCollapsible
       data-conversation-row="true"
       data-agent-notice={notice.kind}
       open={isOpen}
       onOpenChange={setIsOpen}
       className={cn(
-        "max-w-full rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 text-sm",
+        "max-w-full rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5",
         isOpen ? "w-full" : "w-fit"
       )}
     >
@@ -2277,14 +2280,15 @@ function AgentNoticeCard({
           setIsOpen(!isOpen)
         }}
       >
-        <CollapsibleTrigger
+        <TraceCollapsibleTrigger
           data-conversation-tool-collapsible-trigger="true"
-          className="group/tool-collapsible-trigger -ml-0.5 flex shrink-0 cursor-pointer items-center gap-1 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="shrink-0 text-inherit hover:text-inherit"
         >
-          <ChevronRightIcon className="pointer-events-none size-3.5 shrink-0 transition-transform group-aria-expanded/tool-collapsible-trigger:rotate-90" />
-          <Icon className={cn("size-3.5 shrink-0", iconClassName)} />
+          <TraceIcon>
+            <Icon className={iconClassName} />
+          </TraceIcon>
           <span className="font-medium whitespace-nowrap">{notice.label}</span>
-        </CollapsibleTrigger>
+        </TraceCollapsibleTrigger>
         {agentId && isLocalAgentId(agentId) ? (
           <TitleTooltip title={`Open agent ${agentId}`}>
             <button
@@ -2320,13 +2324,11 @@ function AgentNoticeCard({
       </div>
 
       {isOpen ? (
-        <CollapsibleContent className="overflow-hidden text-sm data-open:animate-accordion-down data-closed:animate-accordion-up">
-          <div className="h-(--collapsible-panel-height) pt-2 data-ending-style:h-0 data-starting-style:h-0">
-            <AgentNoticeBody notice={notice} copyText={item.text} />
-          </div>
-        </CollapsibleContent>
+        <TraceCollapsibleContent>
+          <AgentNoticeBody notice={notice} copyText={item.text} />
+        </TraceCollapsibleContent>
       ) : null}
-    </Collapsible>
+    </TraceCollapsible>
   )
 }
 
@@ -2402,49 +2404,59 @@ function PromptMessageCard({
       : (item.images[selectedImageIndex] ?? null)
 
   return (
-    <div className="mr-2 ml-auto w-fit max-w-[calc(100%-0.5rem)] sm:max-w-[80%]">
-      <div className="relative rounded-[22px] bg-primary px-5 py-2.5 text-primary-foreground corner-round">
-        <BubbleTail />
-        {labelText ? (
-          <div className="mb-2 flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="border-primary-foreground/35 bg-primary-foreground/10 text-primary-foreground"
-            >
-              {labelText}
-            </Badge>
-          </div>
-        ) : null}
-        {item.text ? (
-          <CollapsibleUserText>
-            <MarkdownBlock breaks text={item.text} className="user-markdown" />
-          </CollapsibleUserText>
-        ) : (
-          <div className="text-sm text-primary-foreground/80">Image prompt</div>
-        )}
-        {item.images.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-3">
-            {item.images.map((image, index) => (
-              <button
-                key={`${image.url}:${index}`}
-                type="button"
-                className="max-w-full cursor-zoom-in overflow-hidden rounded-lg border border-primary-foreground/20 bg-primary-foreground/10 p-0 transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary-foreground/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary focus-visible:outline-none"
-                onClick={() => setSelectedImageIndex(index)}
-              >
-                <img
-                  src={imageSrc(image)}
-                  alt="Prompt upload"
-                  loading="lazy"
-                  decoding="async"
-                  className="block h-28 max-w-full object-cover"
+    <Message align="end" className="text-[length:inherit]">
+      <MessageContent className="gap-0">
+        <Bubble className="mr-2 max-w-[calc(100%-0.5rem)] sm:max-w-[80%]">
+          <BubbleContent className="overflow-visible rounded-[22px] border-0 px-5 py-2.5 text-[length:inherit] leading-[inherit] corner-round">
+            {labelText ? (
+              <div className="mb-2 flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="border-primary-foreground/35 bg-primary-foreground/10 text-primary-foreground"
+                >
+                  {labelText}
+                </Badge>
+              </div>
+            ) : null}
+            {item.text ? (
+              <CollapsibleUserText>
+                <MarkdownBlock
+                  breaks
+                  text={item.text}
+                  className="user-markdown"
                 />
-                <span className="sr-only">Open prompt upload</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <UserMessageFooter copyText={item.text} entryId={item.forkEntryId} />
+              </CollapsibleUserText>
+            ) : (
+              <div className="text-sm text-primary-foreground/80">
+                Image prompt
+              </div>
+            )}
+            {item.images.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-3">
+                {item.images.map((image, index) => (
+                  <button
+                    key={`${image.url}:${index}`}
+                    type="button"
+                    className="max-w-full cursor-zoom-in overflow-hidden rounded-lg border border-primary-foreground/20 bg-primary-foreground/10 p-0 transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary-foreground/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary focus-visible:outline-none"
+                    onClick={() => setSelectedImageIndex(index)}
+                  >
+                    <img
+                      src={imageSrc(image)}
+                      alt="Prompt upload"
+                      loading="lazy"
+                      decoding="async"
+                      className="block h-28 max-w-full object-cover"
+                    />
+                    <span className="sr-only">Open prompt upload</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </BubbleContent>
+          <BubbleTail />
+        </Bubble>
+        <UserMessageFooter copyText={item.text} entryId={item.forkEntryId} />
+      </MessageContent>
       {selectedImage ? (
         <ImageLightbox
           open={true}
@@ -2460,7 +2472,7 @@ function PromptMessageCard({
           description="Expanded preview of an image attached to a user message."
         />
       ) : null}
-    </div>
+    </Message>
   )
 }
 
@@ -2540,7 +2552,7 @@ function UserMessageFooter({
   return (
     // Left of the bubble's tail and close under the bubble, in the corner
     // that the tail leaves free.
-    <div className="-mt-0.5 mr-5 flex justify-end gap-1 text-xs font-medium text-muted-foreground">
+    <MessageFooter className="-mt-0.5 mr-7 gap-1 px-0">
       {canEdit && entryId && editUserMessage ? (
         <TitleTooltip
           title={
@@ -2567,7 +2579,7 @@ function UserMessageFooter({
           text={copyText}
         />
       ) : null}
-    </div>
+    </MessageFooter>
   )
 }
 
@@ -2989,7 +3001,7 @@ function AssistantMessageFooter({
   if (!showCopyButton && !modelLabel) return null
 
   return (
-    <div className="-mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+    <MessageFooter className="-mt-2 gap-1.5 px-0">
       {showCopyButton ? (
         <MessageFooterCopyButton
           className="-ml-2"
@@ -2998,7 +3010,7 @@ function AssistantMessageFooter({
         />
       ) : null}
       {modelLabel ? <span className="truncate">{modelLabel}</span> : null}
-    </div>
+    </MessageFooter>
   )
 }
 
@@ -3054,26 +3066,29 @@ export function AssistantMessagesStoreCard({
   }
 
   return (
-    <div
-      className={cn("flex flex-col gap-4", COMPACT_ROWS_CLASS, className)}
+    <Message
+      // Text sizes come from the blocks, as before the Message.
+      className={cn("text-[length:inherit]", className)}
       data-conversation-assistant-group="true"
       data-conversation-streaming={shellSnapshot.streaming ? "true" : undefined}
     >
-      {shellSnapshot.hasBlocks ? (
-        <AssistantBlockGroupsView
-          hideThinking={shellSnapshot.hideThinking}
-          store={assistantBlockStore}
-          streaming={shellSnapshot.streaming}
-          workLabel={shellSnapshot.workLabel}
-        />
-      ) : null}
-      {showFooter ? (
-        <AssistantMessageFooter
-          copyText={shellSnapshot.copyText}
-          modelLabel={shellSnapshot.modelLabel}
-          streaming={shellSnapshot.streaming}
-        />
-      ) : null}
-    </div>
+      <MessageContent className={cn("gap-4", COMPACT_ROWS_CLASS)}>
+        {shellSnapshot.hasBlocks ? (
+          <AssistantBlockGroupsView
+            hideThinking={shellSnapshot.hideThinking}
+            store={assistantBlockStore}
+            streaming={shellSnapshot.streaming}
+            workLabel={shellSnapshot.workLabel}
+          />
+        ) : null}
+        {showFooter ? (
+          <AssistantMessageFooter
+            copyText={shellSnapshot.copyText}
+            modelLabel={shellSnapshot.modelLabel}
+            streaming={shellSnapshot.streaming}
+          />
+        ) : null}
+      </MessageContent>
+    </Message>
   )
 }
