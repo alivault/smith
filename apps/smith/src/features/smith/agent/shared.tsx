@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import {
@@ -130,6 +131,7 @@ export function TextDialog({
   refreshMs,
   scrollToEnd = true,
   markdown = false,
+  prepareMarkdown,
   copy = false,
   details,
 }: {
@@ -143,8 +145,10 @@ export function TextDialog({
   refreshMs?: number
   /** Show the end of the text first, as for a log. */
   scrollToEnd?: boolean
-  /** Render the text as Markdown. */
+  /** Render the text as Markdown, with a switch to the raw text. */
   markdown?: boolean
+  /** Change the text before it renders as Markdown (not the raw view). */
+  prepareMarkdown?: (text: string) => string
   /** Show a button that copies the text. */
   copy?: boolean
   /** Lines under the title, such as what the text is and where it comes from. */
@@ -177,6 +181,7 @@ export function TextDialog({
     const element = preRef.current
     if (element && scrollToEnd) element.scrollTop = element.scrollHeight
   }, [query.data?.text, scrollToEnd])
+  const [raw, setRaw] = React.useState(false)
   const [copied, setCopied] = React.useState(false)
   React.useEffect(() => {
     if (!copied) return
@@ -211,9 +216,30 @@ export function TextDialog({
           </DialogTitle>
           {details}
         </DialogHeader>
-        {markdown && query.data?.text ? (
+        {markdown ? (
+          <ToggleGroup
+            variant="outline"
+            size="sm"
+            className="justify-self-start"
+            value={[raw ? "raw" : "formatted"]}
+            onValueChange={(values) => {
+              const value = values[0]
+              if (value) setRaw(value === "raw")
+            }}
+          >
+            <ToggleGroupItem value="formatted">Formatted</ToggleGroupItem>
+            <ToggleGroupItem value="raw">Raw</ToggleGroupItem>
+          </ToggleGroup>
+        ) : null}
+        {markdown && !raw && query.data?.text ? (
           <div className="max-h-[60vh] min-h-24 overflow-auto rounded-md border p-4">
-            <MarkdownBlock text={query.data.text} />
+            <MarkdownBlock
+              text={
+                prepareMarkdown
+                  ? prepareMarkdown(query.data.text)
+                  : query.data.text
+              }
+            />
           </div>
         ) : (
           <pre

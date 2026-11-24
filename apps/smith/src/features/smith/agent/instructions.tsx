@@ -20,6 +20,7 @@ import {
   type AgentSectionProps,
 } from "@/features/smith/agent/agent-panel"
 import { useProfiles } from "@/features/smith/agent/profiles"
+import { promptMarkdown } from "@/features/smith/agent/prompt-markdown"
 import { TextDialog } from "@/features/smith/agent/shared"
 import { buildRequestUrl, fetchJson } from "@/features/smith/app-shell-utils"
 import { useMachineId } from "@/lib/smith/machine-context"
@@ -817,6 +818,8 @@ function InstructionsSection(props: AgentSectionProps) {
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}
+          markdown
+          prepareMarkdown={promptMarkdown}
           copy
           details={
             <DialogDescription>
@@ -852,6 +855,8 @@ function InstructionsSection(props: AgentSectionProps) {
           agentId={agentId}
           viewerContextId={viewerContextId}
           scrollToEnd={false}
+          markdown
+          prepareMarkdown={promptMarkdown}
           copy
           details={
             <>
