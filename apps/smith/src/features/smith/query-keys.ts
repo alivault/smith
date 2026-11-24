@@ -141,6 +141,8 @@ export const smithQueryKeys = {
     ["smith", "gh-run-logs", viewerContextId, cwd, id, job] as const,
   gitCommitFiles: (viewerContextId: string, cwd: string, commit: string) =>
     ["smith", "git-commit-files", viewerContextId, cwd, commit] as const,
+  gitCommitBody: (viewerContextId: string, cwd: string, commit: string) =>
+    ["smith", "git-commit-body", viewerContextId, cwd, commit] as const,
   gitAction: (
     viewerContextId: string,
     cwd: string,

@@ -519,6 +519,8 @@ export function gitCommitsSummaryText(
 }
 
 const GIT_COMMIT_FIELD_SEPARATOR = "\u001f"
+// Newer servers end the row with the author email in angle brackets.
+const GIT_COMMIT_EMAIL_FIELD = /^<([^<>\s]*)>$/
 
 export function parseGitCommitGraphLine(line: string) {
   const text = typeof line === "string" ? line : ""
@@ -526,6 +528,7 @@ export function parseGitCommitGraphLine(line: string) {
   if (tabIndex < 0) {
     return {
       author: "",
+      email: "",
       graph: text,
       hash: "",
       fullHash: "",
@@ -553,7 +556,14 @@ export function parseGitCommitGraphLine(line: string) {
     ] = metadataFields
     const hasFullDate = /^\d{4}-\d{2}-\d{2}T/.test(maybeFullDate)
     const fullDate = hasFullDate ? maybeFullDate : ""
-    const subjectAndStats = hasFullDate ? rest : [maybeFullDate, ...rest]
+    const fields = hasFullDate ? rest : [maybeFullDate, ...rest]
+    // The email is a last field after the subject. Rows of older servers
+    // have no email; a stats field never has angle brackets.
+    const emailMatch =
+      fields.length > 1
+        ? GIT_COMMIT_EMAIL_FIELD.exec(fields[fields.length - 1] ?? "")
+        : null
+    const subjectAndStats = emailMatch ? fields.slice(0, -1) : fields
     const stats =
       subjectAndStats.length > 1
         ? subjectAndStats[subjectAndStats.length - 1] || ""
@@ -562,6 +572,7 @@ export function parseGitCommitGraphLine(line: string) {
 
     return {
       author,
+      email: emailMatch?.[1] ?? "",
       graph: hashMatch ? hashMatch[1] : lead,
       hash: hashMatch ? hashMatch[2] : "",
       fullHash,
@@ -592,6 +603,7 @@ export function parseGitCommitGraphLine(line: string) {
 
     return {
       author,
+      email: "",
       graph: hashMatch ? hashMatch[1] : lead,
       hash: hashMatch ? hashMatch[2] : "",
       fullHash,
@@ -612,6 +624,7 @@ export function parseGitCommitGraphLine(line: string) {
   )
   return {
     author: "",
+    email: "",
     graph: hashMatch ? hashMatch[1] : lead,
     hash: hashMatch ? hashMatch[2] : "",
     fullHash: hasFullHash ? maybeFullHash : hashMatch ? hashMatch[2] : "",
