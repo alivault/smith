@@ -8,27 +8,27 @@ import {
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 
-/**
- * Trace, from shadcn/ui (https://ui.shadcn.com/docs/components/base/trace):
- * one line for each step of the agent's work (thinking, a tool call, a
- * source), which can open to show more. Restyled for Smith: the chevron
- * leads the line, as in the Finder's outline view, and the open content
- * sits under the line without a rail unless it asks for one.
+/*
+ * Trace, from shadcn/ui (https://ui.shadcn.com/r/styles/base-nova/trace.json):
+ * one line for each step of the agent's work, which can open to show more.
+ * As upstream, with two Smith additions: `TraceSummary` (the detail after a
+ * title, as the command of "Bash"), and `rail={false}` on the content for
+ * content that sits in its own box.
  */
+
 function Trace({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="trace"
-      className={cn("flex w-full min-w-0 flex-col gap-2", className)}
+      className={cn(
+        "flex w-full min-w-0 flex-col gap-2 *:has-[>[data-slot=trace-line]]:flex *:has-[>[data-slot=trace-line]]:w-fit *:has-[>[data-slot=trace-line]]:max-w-full *:has-[>[data-slot=trace-line]]:min-w-0 *:has-[>[data-slot=trace-line]]:rounded-md *:has-[>[data-slot=trace-line]]:text-left *:has-[>[data-slot=trace-line]]:outline-none *:has-[>[data-slot=trace-line]]:focus-visible:ring-3 *:has-[>[data-slot=trace-line]]:focus-visible:ring-ring/50",
+        className
+      )}
       {...props}
     />
   )
 }
 
-/**
- * One line. `running` shimmers the title, `error` colors it red, and
- * `pending` dims the line. Wrap it in a trigger to make it do something.
- */
 function TraceLine({
   className,
   status,
@@ -41,10 +41,7 @@ function TraceLine({
       data-slot="trace-line"
       data-status={status}
       className={cn(
-        "flex w-fit max-w-full min-w-0 items-center gap-1 text-sm text-muted-foreground",
-        "data-[status=pending]:opacity-60",
-        "data-[status=running]:*:data-[slot=trace-title]:shimmer data-[status=running]:*:data-[slot=trace-title]:text-amber-600 dark:data-[status=running]:*:data-[slot=trace-title]:text-amber-400",
-        "data-[status=error]:*:data-[slot=trace-title]:text-destructive",
+        "flex w-fit max-w-full min-w-0 items-center gap-2 text-sm text-muted-foreground transition-colors in-[a,button]:cursor-pointer in-[a:hover,button:hover]:text-foreground data-[status=error]:text-destructive data-[status=error]:in-[a:hover,button:hover]:text-destructive data-[status=pending]:opacity-60 data-[status=running]:*:data-[slot=trace-title]:shimmer",
         className
       )}
       {...props}
@@ -58,7 +55,7 @@ function TraceIcon({ className, ...props }: React.ComponentProps<"span">) {
       data-slot="trace-icon"
       aria-hidden="true"
       className={cn(
-        "flex size-3.5 shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-3.5",
+        "flex size-4 shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [[data-slot=trace-title]~&]:-ml-1",
         className
       )}
       {...props}
@@ -66,13 +63,25 @@ function TraceIcon({ className, ...props }: React.ComponentProps<"span">) {
   )
 }
 
-/** What the step is, as "Bash" or "Thinking". It shimmers while it runs. */
 function TraceTitle({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="trace-title"
+      className={cn("min-w-0 truncate motion-reduce:shimmer-none", className)}
+      {...props}
+    />
+  )
+}
+
+function TraceDescription({
+  className,
+  ...props
+}: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="trace-description"
       className={cn(
-        "min-w-0 truncate motion-reduce:shimmer-none [[data-slot=trace-icon]+&]:ml-0.5",
+        "shrink-0 text-muted-foreground/70 tabular-nums",
         className
       )}
       {...props}
@@ -85,21 +94,7 @@ function TraceSummary({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
       data-slot="trace-summary"
-      className={cn("ml-0.5 min-w-0 truncate", className)}
-      {...props}
-    />
-  )
-}
-
-/** A short trailing fact, as "+3 −2" or "4s". It does not shrink. */
-function TraceDescription({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
-  return (
-    <span
-      data-slot="trace-description"
-      className={cn("ml-1 shrink-0 tabular-nums", className)}
+      className={cn("min-w-0 truncate", className)}
       {...props}
     />
   )
@@ -108,77 +103,69 @@ function TraceDescription({
 function TraceCollapsible({
   className,
   ...props
-}: React.ComponentProps<typeof Collapsible>) {
+}: Omit<React.ComponentProps<typeof Collapsible>, "open"> &
+  (
+    | { open?: undefined }
+    | {
+        open: boolean
+        onOpenChange: NonNullable<
+          React.ComponentProps<typeof Collapsible>["onOpenChange"]
+        >
+      }
+  )) {
   return (
     <Collapsible
       data-slot="trace-collapsible"
-      className={cn("flex w-full min-w-0 flex-col text-sm", className)}
+      className={cn("flex w-full min-w-0 flex-col", className)}
       {...props}
     />
   )
 }
 
 function TraceCollapsibleTrigger({
-  chevronClassName,
   className,
   children,
   ...props
-}: React.ComponentProps<typeof CollapsibleTrigger> & {
-  chevronClassName?: string
-}) {
+}: React.ComponentProps<typeof CollapsibleTrigger>) {
   return (
     <CollapsibleTrigger
       data-slot="trace-collapsible-trigger"
       className={cn(
-        "group/trace-collapsible-trigger -ml-0.5 flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-sm text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+        "group/trace-collapsible-trigger flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 rounded-md text-left text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 has-[[data-status=error]]:text-destructive",
         className
       )}
       {...props}
     >
-      <TraceIcon
-        className={cn(
-          "transition-transform group-aria-expanded/trace-collapsible-trigger:rotate-90",
-          chevronClassName
-        )}
-      >
+      {children}
+      <TraceIcon className="transition-transform group-aria-expanded/trace-collapsible-trigger:rotate-90">
         <ChevronRightIcon />
       </TraceIcon>
-      {children}
     </CollapsibleTrigger>
   )
 }
 
-/**
- * The detail of an open line. `rail` draws a line on its left, for steps
- * and text that belong to the line above (a summary that opens into its
- * steps, or thinking).
- */
 function TraceCollapsibleContent({
   className,
-  innerClassName,
   children,
-  rail = false,
+  rail = true,
   ...props
 }: React.ComponentProps<typeof CollapsibleContent> & {
-  innerClassName?: string
+  /** False for content in its own box, without the rail on its left. */
   rail?: boolean
 }) {
   return (
     <CollapsibleContent
       data-slot="trace-collapsible-content"
-      className={cn(
-        "h-(--collapsible-panel-height) min-w-0 overflow-hidden text-sm transition-[height] duration-200 ease-out data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none",
-        className
-      )}
+      className="h-(--collapsible-panel-height) min-w-0 overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none"
       {...props}
     >
       <div
         data-slot="trace-collapsible-content-inner"
-        data-rail={rail || undefined}
         className={cn(
-          "min-w-0 pt-2",
-          rail && "mt-2 ml-1.5 border-l-2 pt-0 pl-4",
-          innerClassName
+          rail
+            ? "mt-2 mb-1 ml-[calc(--spacing(2)-1px)] min-w-0 border-l pr-1 pl-4 leading-relaxed wrap-break-word text-muted-foreground"
+            : "mt-2 min-w-0",
+          className
         )}
       >
         {children}
@@ -192,8 +179,8 @@ export {
   TraceLine,
   TraceIcon,
   TraceTitle,
-  TraceSummary,
   TraceDescription,
+  TraceSummary,
   TraceCollapsible,
   TraceCollapsibleTrigger,
   TraceCollapsibleContent,

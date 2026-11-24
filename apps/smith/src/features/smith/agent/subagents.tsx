@@ -322,7 +322,7 @@ function SpawnCard({ block }: ToolRendererProps) {
         ) : null}
       </div>
       {hasDetails ? (
-        <TraceCollapsibleContent rail innerClassName="space-y-1.5 text-xs">
+        <TraceCollapsibleContent className="space-y-1.5 text-xs">
           {goal ? (
             <p className="line-clamp-3 text-muted-foreground">{goal}</p>
           ) : null}

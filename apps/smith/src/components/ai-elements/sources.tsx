@@ -35,7 +35,7 @@ function Sources({ sources }: { sources: Array<WebSource> }) {
           </TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent rail>
+      <TraceCollapsibleContent>
         <Trace className="gap-1.5">
           {sources.map((source) => (
             <a

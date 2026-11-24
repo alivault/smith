@@ -1889,6 +1889,18 @@ function EditToolOutput({
   )
 }
 
+/** The body of an open tool card, from the store. */
+function ToolBlockCardStoreBody({
+  blockKey,
+  store,
+}: {
+  blockKey: string
+  store: AssistantBlockStore
+}) {
+  const block = useAssistantToolBlockBody(store, blockKey, true)
+  return block ? <ToolBlockCardBody block={block} /> : null
+}
+
 function ToolBlockCardBody({ block }: { block: AssistantToolBlock }) {
   const CustomBody = toolRenderer(block.name)?.Body
   if (CustomBody) {
@@ -2145,7 +2157,6 @@ function ToolBlockCardContent({
   const [isOpen, setIsOpen] = useRememberedToolCollapsibleOpen(
     header.openStateKey
   )
-  const bodyBlock = useAssistantToolBlockBody(store, blockKey, isOpen)
 
   return (
     <Tool open={isOpen} onOpenChange={setIsOpen}>
@@ -2164,14 +2175,26 @@ function ToolBlockCardContent({
           <TestResultsCounts summary={header.testCounts} />
         ) : null}
       </ToolHeader>
-      {isOpen && bodyBlock ? (
-        <ToolContent>
-          <ToolBlockCardBody block={bodyBlock} />
-        </ToolContent>
-      ) : null}
+      {/* The panel unmounts its content when closed, after the close
+          animation, so a closed row does not read its block. */}
+      <ToolContent>
+        <ToolBlockCardStoreBody blockKey={blockKey} store={store} />
+      </ToolContent>
       <ToolResultImages images={header.images} />
     </Tool>
   )
+}
+
+/** The steps of an open explore group, from the store. */
+function ExploreToolGroupStoreBody({
+  blockKeys,
+  store,
+}: {
+  blockKeys: Array<string>
+  store: AssistantBlockStore
+}) {
+  const blocks = useAssistantToolGroupBodyBlocks(store, blockKeys, true)
+  return <ExploreToolGroupCardBody blocks={blocks} />
 }
 
 function ExploreToolGroupCardBody({
@@ -2219,7 +2242,6 @@ const ExploreToolGroupCard = React.memo(function ExploreToolGroupCard({
   const [isOpen, setIsOpen] = useRememberedToolCollapsibleOpen(
     header.openStateKey
   )
-  const blocks = useAssistantToolGroupBodyBlocks(store, blockKeys, isOpen)
 
   if (header.count === 0) return null
 
@@ -2231,11 +2253,9 @@ const ExploreToolGroupCard = React.memo(function ExploreToolGroupCard({
         running={header.hasRunning}
         summary={header.summary}
       />
-      {isOpen ? (
-        <ChainOfThoughtContent>
-          <ExploreToolGroupCardBody blocks={blocks} />
-        </ChainOfThoughtContent>
-      ) : null}
+      <ChainOfThoughtContent>
+        <ExploreToolGroupStoreBody blockKeys={blockKeys} store={store} />
+      </ChainOfThoughtContent>
       <ToolResultImages images={header.images} />
     </ChainOfThought>
   )
@@ -2250,13 +2270,11 @@ const CompactionBlockCard = React.memo(function CompactionBlockCard({
 }) {
   return (
     <TraceCollapsible className="rounded-xl border bg-muted/20 px-3 py-2">
-      <TraceCollapsibleTrigger
-        className="ml-0 w-full gap-2 font-medium text-foreground hover:text-foreground"
-        chevronClassName="size-4 text-muted-foreground [&_svg:not([class*='size-'])]:size-4"
-      >
+      <TraceCollapsibleTrigger className="text-sm font-medium text-foreground">
         <span>{compactionTriggerText(block)}</span>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent innerClassName="mt-3 border-t pt-3">
+      {/* A box with a divider, as before: no rail. */}
+      <TraceCollapsibleContent rail={false} className="mt-3 border-t pt-3">
         {block.summary.trim() ? (
           <MarkdownBlock text={block.summary} />
         ) : (
@@ -2404,11 +2422,10 @@ function AgentNoticeCard({
         </span>
       </div>
 
-      {isOpen ? (
-        <TraceCollapsibleContent>
-          <AgentNoticeBody notice={notice} copyText={item.text} />
-        </TraceCollapsibleContent>
-      ) : null}
+      {/* The notice is a box, and its body has a box: no rail. */}
+      <TraceCollapsibleContent rail={false}>
+        <AgentNoticeBody notice={notice} copyText={item.text} />
+      </TraceCollapsibleContent>
     </TraceCollapsible>
   )
 }
@@ -2848,7 +2865,8 @@ function OpenThinkingBlockBody({
   const block = useAssistantBlock(store, blockKey)
   if (block?.type !== "thinking") return null
 
-  return <ThinkingBlockBody text={block.text} streaming={streaming} />
+  // The rail of the Reasoning content takes the place of the amber rail.
+  return <MarkdownBlock text={block.text} streaming={streaming} />
 }
 
 /**
@@ -2880,15 +2898,13 @@ function CollapsedThinkingBlock({
         // Only the thinking that streams now shimmers.
         streaming={streaming && isLast}
       />
-      {isOpen ? (
-        <TraceCollapsibleContent>
-          <OpenThinkingBlockBody
-            blockKey={blockKey}
-            store={store}
-            streaming={streaming}
-          />
-        </TraceCollapsibleContent>
-      ) : null}
+      <TraceCollapsibleContent>
+        <OpenThinkingBlockBody
+          blockKey={blockKey}
+          store={store}
+          streaming={streaming}
+        />
+      </TraceCollapsibleContent>
     </Reasoning>
   )
 }
@@ -2962,13 +2978,11 @@ function AssistantWorkGroup({
     >
       <ChainOfThought open={isOpen} onOpenChange={setIsOpen}>
         <ChainOfThoughtHeader label={label} />
-        {isOpen ? (
-          <ChainOfThoughtContent innerClassName="pt-3">
-            <div className={cn("flex flex-col gap-4", COMPACT_ROWS_CLASS)}>
-              {children}
-            </div>
-          </ChainOfThoughtContent>
-        ) : null}
+        <ChainOfThoughtContent>
+          <div className={cn("flex flex-col gap-4", COMPACT_ROWS_CLASS)}>
+            {children}
+          </div>
+        </ChainOfThoughtContent>
       </ChainOfThought>
     </div>
   )

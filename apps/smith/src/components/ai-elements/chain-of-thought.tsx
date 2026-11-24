@@ -35,7 +35,9 @@ function ChainOfThoughtHeader({
   return (
     <TraceCollapsibleTrigger data-conversation-tool-collapsible-trigger="true">
       <TraceLine status={running ? "running" : isError ? "error" : undefined}>
-        <TraceTitle className={cn(summary && "shrink-0 font-medium")}>
+        <TraceTitle
+          className={cn(summary && "shrink-0 overflow-visible font-medium")}
+        >
           {label}
         </TraceTitle>
         {summary ? <TraceSummary>{summary}</TraceSummary> : null}
@@ -50,20 +52,12 @@ function ChainOfThoughtContent(
   return <TraceCollapsibleContent {...props} />
 }
 
-/** The steps of an open chain, in a box. */
+/** The steps of an open chain, on the rail of the content. */
 function ChainOfThoughtSteps({
   className,
   ...props
 }: React.ComponentProps<typeof Trace>) {
-  return (
-    <Trace
-      className={cn(
-        "max-h-96 gap-3 overflow-auto rounded-lg border bg-background/80 p-3",
-        className
-      )}
-      {...props}
-    />
-  )
+  return <Trace className={className} {...props} />
 }
 
 /** One step: what it did, and on what. */
@@ -80,18 +74,13 @@ function ChainOfThoughtStep({
 }) {
   return (
     <TraceLine
-      status={running ? "running" : undefined}
-      className="w-full gap-3"
+      status={running ? "running" : isError ? "error" : undefined}
+      className="max-w-full"
     >
-      <TraceTitle className="shrink-0 font-medium text-foreground">
+      <TraceTitle className="shrink-0 overflow-visible font-medium text-foreground">
         {label}
       </TraceTitle>
-      <span
-        className={cn(
-          "no-scrollbar min-w-0 overflow-x-auto whitespace-nowrap",
-          isError && "text-destructive"
-        )}
-      >
+      <span className="no-scrollbar min-w-0 overflow-x-auto whitespace-nowrap">
         {description}
       </span>
     </TraceLine>

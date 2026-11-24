@@ -46,7 +46,7 @@ function ReasoningContent({
 }: React.ComponentProps<typeof TraceCollapsibleContent>) {
   return (
     <TraceCollapsibleContent className={className} {...props}>
-      <ReasoningText>{children}</ReasoningText>
+      {children}
     </TraceCollapsibleContent>
   )
 }

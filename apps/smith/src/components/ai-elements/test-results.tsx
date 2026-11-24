@@ -55,10 +55,14 @@ function TestResults({ summary }: { summary: TestSummary }) {
   return (
     <TraceCollapsible data-slot="test-results" defaultOpen className="mb-2">
       <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
-      <TraceCollapsibleContent rail>
+      <TraceCollapsibleContent>
         <Trace className="gap-1.5">
           {summary.failures.map((failure, index) => (
-            <div key={`${failure.name}:${index}`} className="min-w-0">
+            <div
+              key={`${failure.name}:${index}`}
+              // A column: Trace makes a child with a line a flex row.
+              className="min-w-0 flex-col"
+            >
               <TraceLine status="error">
                 <TraceIcon>
                   <FlaskConicalIcon />
