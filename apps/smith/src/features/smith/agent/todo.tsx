@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { toast } from "@/lib/smith/toast"
 
+import { Plan, PlanStep } from "@/components/ai-elements/plan"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -360,6 +361,20 @@ registerToolRenderer("todo", {
           {block.output || "The plan is empty."}
         </div>
       )
-    return <TodoList items={items} />
+    return (
+      <Plan>
+        {items.map((item) => (
+          <PlanStep
+            key={item.id}
+            title={item.text}
+            note={item.note}
+            label={STATUS_LABEL[item.status]}
+            icon={<StatusIcon status={item.status} />}
+            done={item.status === "done"}
+            active={item.status === "active"}
+          />
+        ))}
+      </Plan>
+    )
   },
 })

@@ -3,15 +3,19 @@ import { CheckIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react"
 import { toast } from "@/lib/smith/toast"
 
 import { ImageAttachment } from "@/components/ai-elements/image-attachment"
+import { Confirmation } from "@/components/ai-elements/confirmation"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireInput,
+  QuestionnaireItem,
+  QuestionnaireSubmit,
+} from "@/components/ui/questionnaire"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import {
@@ -161,6 +165,116 @@ function submitOnCommandEnter(event: React.KeyboardEvent, send: () => void) {
   }
 }
 
+function ConfirmButtons({
+  disabled,
+  onAnswer,
+}: {
+  disabled?: boolean
+  onAnswer: (value: AnswerValue, images: Array<PromptImage>) => void
+}) {
+  return (
+    <>
+      <Button size="sm" disabled={disabled} onClick={() => onAnswer("yes", [])}>
+        <CheckIcon /> Yes
+      </Button>
+      <Button
+        size="sm"
+        disabled={disabled}
+        onClick={() => onAnswer("no", [])}
+        variant="outline"
+      >
+        <XIcon /> No
+      </Button>
+    </>
+  )
+}
+
+/**
+ * A choice question as a Questionnaire
+ * (https://ui.shadcn.com/docs/components/base/questionnaire): one choice
+ * answers at once; several choices, or another answer, send with Send.
+ * Letters choose with the keyboard.
+ */
+function ChoiceQuestionForm({
+  allowOther,
+  disabled,
+  multi,
+  onAnswer,
+  options,
+  pasted,
+}: {
+  allowOther: boolean
+  disabled?: boolean
+  multi: boolean
+  onAnswer: (value: AnswerValue, images: Array<PromptImage>) => void
+  options: Array<QuestionOption>
+  pasted: ReturnType<typeof usePastedImages>
+}) {
+  const name = "answer"
+  return (
+    <Questionnaire
+      className="gap-3"
+      shortcuts="letters"
+      onChange={(event) => {
+        // One choice answers at once, as a button would.
+        const target = event.target
+        if (
+          !multi &&
+          target instanceof HTMLInputElement &&
+          target.type === "radio" &&
+          target.checked
+        ) {
+          // After the Questionnaire stores the choice, so that it is valid.
+          const form = event.currentTarget
+          window.setTimeout(() => form.requestSubmit(), 0)
+        }
+      }}
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (disabled) return
+        const values = new FormData(event.currentTarget)
+          .getAll(name)
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter(Boolean)
+        if (values.length === 0 && pasted.images.length === 0) return
+        onAnswer(multi ? values : (values[0] ?? ""), pasted.images)
+      }}
+    >
+      <QuestionnaireItem name={name} multiple={multi} required>
+        <fieldset disabled={disabled} className="contents">
+          <QuestionnaireChoices aria-label="Choices">
+            {options.map((option) => (
+              <QuestionnaireChoice key={option.label} value={option.label}>
+                <span className="font-medium">{option.label}</span>
+                {option.description ? (
+                  <QuestionnaireChoiceDescription>
+                    {option.description}
+                  </QuestionnaireChoiceDescription>
+                ) : null}
+              </QuestionnaireChoice>
+            ))}
+            {allowOther ? (
+              <QuestionnaireInput
+                aria-label="Another answer"
+                placeholder="Or type another answer"
+                onPaste={pasted.onPaste}
+              />
+            ) : null}
+          </QuestionnaireChoices>
+        </fieldset>
+      </QuestionnaireItem>
+      <PastedImages images={pasted.images} onRemove={pasted.remove} />
+      {multi || allowOther ? (
+        <QuestionnaireActions>
+          <QuestionnaireSubmit size="sm" disabled={disabled}>
+            Send
+          </QuestionnaireSubmit>
+        </QuestionnaireActions>
+      ) : null}
+    </Questionnaire>
+  )
+}
+
 export function QuestionForm({
   disabled,
   onAnswer,
@@ -173,7 +287,6 @@ export function QuestionForm({
   const [text, setText] = React.useState("")
   const pasted = usePastedImages()
   const hasImages = pasted.images.length > 0
-  const [selected, setSelected] = React.useState<Array<string>>([])
   const [form, setForm] = React.useState<Record<string, string>>({})
   const options = question.options ?? []
   const id = React.useId()
@@ -181,16 +294,7 @@ export function QuestionForm({
   if (question.kind === "confirm") {
     return (
       <div className="flex gap-2">
-        <Button disabled={disabled} onClick={() => onAnswer("yes", [])}>
-          <CheckIcon /> Yes
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={() => onAnswer("no", [])}
-          variant="outline"
-        >
-          <XIcon /> No
-        </Button>
+        <ConfirmButtons disabled={disabled} onAnswer={onAnswer} />
       </div>
     )
   }
@@ -198,97 +302,14 @@ export function QuestionForm({
   if (question.kind === "choice" || question.kind === "multi") {
     const multi = question.kind === "multi"
     return (
-      <div className="space-y-3">
-        {multi ? (
-          <FieldGroup className="gap-2">
-            {options.map((option, index) => {
-              const optionId = `${id}-option-${index}`
-              return (
-                <Field key={option.label} orientation="horizontal">
-                  <Checkbox
-                    id={optionId}
-                    disabled={disabled}
-                    checked={selected.includes(option.label)}
-                    onCheckedChange={(checked) =>
-                      setSelected((current) =>
-                        checked
-                          ? [...current, option.label]
-                          : current.filter((label) => label !== option.label)
-                      )
-                    }
-                  />
-                  <FieldContent>
-                    <FieldLabel htmlFor={optionId}>{option.label}</FieldLabel>
-                    {option.description ? (
-                      <FieldDescription>{option.description}</FieldDescription>
-                    ) : null}
-                  </FieldContent>
-                </Field>
-              )
-            })}
-          </FieldGroup>
-        ) : (
-          <div
-            className="flex flex-col gap-1.5"
-            role="group"
-            aria-label="Choices"
-          >
-            {options.map((option) => (
-              <Button
-                key={option.label}
-                type="button"
-                variant="outline"
-                disabled={disabled}
-                className="h-auto w-full flex-col items-start gap-0.5 py-2 text-left whitespace-normal"
-                onClick={() => onAnswer(option.label, pasted.images)}
-              >
-                <span className="font-medium">{option.label}</span>
-                {option.description ? (
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {option.description}
-                  </span>
-                ) : null}
-              </Button>
-            ))}
-          </div>
-        )}
-        {multi ? (
-          <Button
-            disabled={disabled || selected.length === 0}
-            onClick={() => onAnswer(selected, pasted.images)}
-          >
-            {selected.length > 0 ? `Send ${selected.length} choices` : "Send"}
-          </Button>
-        ) : null}
-        {question.allowOther ? (
-          <form
-            className="space-y-2"
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (text.trim() || hasImages) onAnswer(text.trim(), pasted.images)
-            }}
-          >
-            <div className="flex gap-2">
-              <Input
-                disabled={disabled}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                onPaste={pasted.onPaste}
-                placeholder="Or type another answer"
-                aria-label="Another answer"
-              />
-              <Button
-                disabled={disabled || (!text.trim() && !hasImages)}
-                type="submit"
-                variant="outline"
-              >
-                Send
-              </Button>
-            </div>
-            <PastedImages images={pasted.images} onRemove={pasted.remove} />
-          </form>
-        ) : null}
-      </div>
+      <ChoiceQuestionForm
+        allowOther={Boolean(question.allowOther)}
+        disabled={disabled}
+        multi={multi}
+        options={options}
+        pasted={pasted}
+        onAnswer={onAnswer}
+      />
     )
   }
 
@@ -495,6 +516,9 @@ export function QuestionCardView({
   const waiting = block.running && details.status !== "answered"
   const answered =
     details.status === "answered" || (!block.running && !block.isError)
+  // A yes or no question that waits shows as a Confirmation.
+  const confirming =
+    waiting && Boolean(questionId) && question.kind === "confirm"
   const trackRef = useTrackWaitingCard(
     waiting && questionId
       ? waitingCardKey(viewerContextId, agentId, questionId)
@@ -520,9 +544,21 @@ export function QuestionCardView({
         {title ?? (waiting ? "The agent waits for your answer" : "Question")}
         {sending ? <Spinner size="xs" /> : null}
       </div>
-      {question.prompt ? <MarkdownBlock text={question.prompt} /> : null}
+      {confirming ? (
+        <Confirmation
+          title={<MarkdownBlock text={question.prompt} />}
+          actions={
+            <ConfirmButtons
+              disabled={sending}
+              onAnswer={(value, images) => answer(questionId, value, images)}
+            />
+          }
+        />
+      ) : question.prompt ? (
+        <MarkdownBlock text={question.prompt} />
+      ) : null}
       {waiting && actions ? actions : null}
-      {waiting && questionId ? (
+      {confirming ? null : waiting && questionId ? (
         <QuestionForm
           disabled={sending}
           question={question}

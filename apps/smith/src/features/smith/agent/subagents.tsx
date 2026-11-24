@@ -19,6 +19,15 @@ import {
 } from "@/components/ui/item"
 import { Spinner } from "@/components/ui/spinner"
 import {
+  TraceCollapsible,
+  TraceCollapsibleContent,
+  TraceCollapsibleTrigger,
+  TraceIcon,
+  TraceLine,
+  TraceSummary,
+  TraceTitle,
+} from "@/components/ui/trace"
+import {
   registerAgentSection,
   type AgentSectionProps,
 } from "@/features/smith/agent/agent-panel"
@@ -268,11 +277,30 @@ function SpawnCard({ block }: ToolRendererProps) {
     (typeof args.name === "string" ? args.name : undefined) ??
     "Subagent"
   const goal = typeof args.goal === "string" ? args.goal : ""
+  const running = live?.busy ?? block.running
+  const hasDetails = Boolean(goal || details.worktree || block.isError)
+  // Subagent, the AI Elements pattern
+  // (https://ui.shadcn.com/docs/ai-elements/base/subagent): one Trace line
+  // for the run, open to its goal. The Open button sits beside the trigger.
   return (
-    <div className="space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
-      <div className="flex items-center gap-2">
-        <BotPlusIcon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+    <TraceCollapsible defaultOpen data-conversation-row="true">
+      <div className="flex max-w-full min-w-0 items-center gap-2">
+        <TraceCollapsibleTrigger
+          data-conversation-tool-collapsible-trigger="true"
+          disabled={!hasDetails}
+        >
+          <TraceLine
+            status={running ? "running" : block.isError ? "error" : undefined}
+          >
+            <TraceIcon>
+              <BotPlusIcon />
+            </TraceIcon>
+            <TraceTitle className="shrink-0 overflow-visible font-medium whitespace-nowrap">
+              Subagent
+            </TraceTitle>
+            <TraceSummary className="text-foreground">{title}</TraceSummary>
+          </TraceLine>
+        </TraceCollapsibleTrigger>
         {live ? (
           <SubagentStatus subagent={live} />
         ) : block.running ? (
@@ -280,8 +308,9 @@ function SpawnCard({ block }: ToolRendererProps) {
         ) : null}
         {details.agentId ? (
           <Button
-            size="sm"
+            size="xs"
             variant="outline"
+            className="shrink-0"
             onClick={() =>
               emitSmithEvent("smith:open-agent", {
                 agentId: details.agentId!,
@@ -292,20 +321,24 @@ function SpawnCard({ block }: ToolRendererProps) {
           </Button>
         ) : null}
       </div>
-      {details.worktree ? (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <GitForkIcon className="size-3" /> {details.worktree.branch}
-        </div>
+      {hasDetails ? (
+        <TraceCollapsibleContent rail innerClassName="space-y-1.5 text-xs">
+          {goal ? (
+            <p className="line-clamp-3 text-muted-foreground">{goal}</p>
+          ) : null}
+          {details.worktree ? (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <GitForkIcon className="size-3" /> {details.worktree.branch}
+            </div>
+          ) : null}
+          {block.isError ? (
+            <pre className="whitespace-pre-wrap text-destructive">
+              {block.output}
+            </pre>
+          ) : null}
+        </TraceCollapsibleContent>
       ) : null}
-      {goal ? (
-        <p className="line-clamp-3 text-xs text-muted-foreground">{goal}</p>
-      ) : null}
-      {block.isError ? (
-        <pre className="text-xs whitespace-pre-wrap text-destructive">
-          {block.output}
-        </pre>
-      ) : null}
-    </div>
+    </TraceCollapsible>
   )
 }
 

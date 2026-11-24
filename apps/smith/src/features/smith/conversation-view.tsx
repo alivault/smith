@@ -51,7 +51,13 @@ import {
   ReasoningText,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning"
+import { Sources } from "@/components/ai-elements/sources"
+import { StackTrace } from "@/components/ai-elements/stack-trace"
 import { AnsiText, Terminal } from "@/components/ai-elements/terminal"
+import {
+  TestResults,
+  TestResultsCounts,
+} from "@/components/ai-elements/test-results"
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool"
 import { Badge } from "@/components/ui/badge"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
@@ -65,6 +71,12 @@ import {
   toolCategoryFromTool,
   toolCouldBecomeExploreFromTool,
 } from "@/lib/smith/tool-classification"
+import {
+  parseStackTrace,
+  parseTestSummary,
+  parseWebSources,
+  type StackFrame,
+} from "@/lib/smith/tool-output-detect"
 import { cn } from "@/lib/utils"
 import "@/features/smith/agent/register"
 import { toolRenderer } from "@/features/smith/tool-renderers/registry"
@@ -1287,6 +1299,8 @@ type ToolBlockHeaderSnapshot = {
   /** The file of a read, write, or edit, for a link in the summary. */
   file: FileReference | null
   editStats: EditDiffStatCounts | null
+  /** The counts of a finished test run in a shell call. */
+  testCounts: { passed: number; failed: number } | null
   images: ConversationImage[]
   openStateKey: string
 }
@@ -1298,6 +1312,23 @@ type ExploreToolGroupHeaderSnapshot = {
   hasError: boolean
   images: ConversationImage[]
   openStateKey: string
+}
+
+// One parse for each block: the header snapshot is built again on each
+// update, and an unchanged block keeps its object.
+const testCountsByBlock = new WeakMap<
+  object,
+  { passed: number; failed: number } | null
+>()
+
+function testCountsFromBlock(block: AssistantToolBlock) {
+  if (testCountsByBlock.has(block)) return testCountsByBlock.get(block) ?? null
+  const summary = parseTestSummary(block.output)
+  const counts = summary
+    ? { passed: summary.passed, failed: summary.failed }
+    : null
+  testCountsByBlock.set(block, counts)
+  return counts
 }
 
 function sameEditDiffStatCounts(
@@ -1339,6 +1370,10 @@ function buildToolBlockHeaderSnapshot(
       block.name === "edit" && !block.running
         ? getEditDiffStats(toolPatchText(block))
         : null,
+    testCounts:
+      block.name === "bash" && !block.running
+        ? testCountsFromBlock(block)
+        : null,
     // Custom renderers show their own result, images included, except
     // when they ask for the header images.
     images:
@@ -1364,6 +1399,8 @@ function sameToolBlockHeaderSnapshot(
     (left.file ? formatFileReference(left.file) : "") ===
       (right.file ? formatFileReference(right.file) : "") &&
     sameEditDiffStatCounts(left.editStats, right.editStats) &&
+    left.testCounts?.passed === right.testCounts?.passed &&
+    left.testCounts?.failed === right.testCounts?.failed &&
     sameConversationImages(left.images, right.images) &&
     left.openStateKey === right.openStateKey
   )
@@ -1905,16 +1942,23 @@ function DefaultToolBlockCardBody({ block }: { block: AssistantToolBlock }) {
   }
 
   const callText = toolCallText(block)
+  const sources =
+    block.name === "web_search" && !block.running && !block.isError
+      ? parseWebSources(block.output)
+      : []
   return (
-    <div className={cn(TOOL_OUTPUT_BOX_CLASS, "space-y-4")}>
-      {callText ? <ToolBlockSection label="Call" text={callText} /> : null}
-      <ToolBlockSection
-        isError={block.isError}
-        label={block.running ? "Output (streaming)" : "Output"}
-        linkBase={toolOutputLinkBase(block)}
-        text={toolOutputText(block)}
-      />
-    </div>
+    <>
+      {sources.length > 0 ? <Sources sources={sources} /> : null}
+      <div className={cn(TOOL_OUTPUT_BOX_CLASS, "space-y-4")}>
+        {callText ? <ToolBlockSection label="Call" text={callText} /> : null}
+        <ToolBlockSection
+          isError={block.isError}
+          label={block.running ? "Output (streaming)" : "Output"}
+          linkBase={toolOutputLinkBase(block)}
+          text={toolOutputText(block)}
+        />
+      </div>
+    </>
   )
 }
 
@@ -1930,19 +1974,54 @@ function BashToolOutput({ block }: { block: AssistantToolBlock }) {
     enabled: block.running,
   })
   const linkBase = toolOutputLinkBase(block)
+  // Test runs and crashes get their own view above the output. Only a
+  // finished call is read, once for each output.
+  const output = block.running ? "" : block.output
+  const testSummary = React.useMemo(
+    () => (output ? parseTestSummary(output) : null),
+    [output]
+  )
+  const stackTrace = React.useMemo(
+    () => (output && block.isError ? parseStackTrace(output) : null),
+    [output, block.isError]
+  )
 
   return (
-    <Terminal
-      contentRef={autoScroll.ref}
-      onScroll={autoScroll.onScroll}
-      isError={block.isError}
+    <>
+      {testSummary ? <TestResults summary={testSummary} /> : null}
+      {stackTrace ? (
+        <StackTrace trace={stackTrace} renderFile={renderStackFrameFile} />
+      ) : null}
+      <Terminal
+        contentRef={autoScroll.ref}
+        onScroll={autoScroll.onScroll}
+        isError={block.isError}
+      >
+        {linkBase !== undefined && !text.includes(ANSI_ESCAPE) ? (
+          <LinkifiedOutput text={text} />
+        ) : (
+          <AnsiText text={text} />
+        )}
+      </Terminal>
+    </>
+  )
+}
+
+/** The file of a stack frame, as a link to the file viewer. */
+function renderStackFrameFile(frame: StackFrame) {
+  if (!frame.file) return null
+  const location = `${frame.file}${frame.line ? `:${frame.line}` : ""}${
+    frame.column ? `:${frame.column}` : ""
+  }`
+  return (
+    <FileLinkText
+      reference={{
+        path: frame.file,
+        ...(frame.line ? { line: frame.line } : {}),
+      }}
     >
-      {linkBase !== undefined && !text.includes(ANSI_ESCAPE) ? (
-        <LinkifiedOutput text={text} />
-      ) : (
-        <AnsiText text={text} />
-      )}
-    </Terminal>
+      {location}
+    </FileLinkText>
   )
 }
 
@@ -2081,6 +2160,8 @@ function ToolBlockCardContent({
       >
         {header.editStats ? (
           <EditDiffStatCountsView stats={header.editStats} />
+        ) : header.testCounts ? (
+          <TestResultsCounts summary={header.testCounts} />
         ) : null}
       </ToolHeader>
       {isOpen && bodyBlock ? (
