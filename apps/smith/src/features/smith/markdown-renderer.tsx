@@ -6,9 +6,15 @@ import rehypeRaw from "rehype-raw"
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
 import remarkBreaks from "remark-breaks"
 import remarkGfm from "remark-gfm"
-import { CheckIcon, CopyIcon } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import {
+  CodeBlock as UiCodeBlock,
+  CodeBlockActions,
+  CodeBlockContent,
+  CodeBlockCopyButton,
+  CodeBlockHeader,
+  CodeBlockTitle,
+} from "@/components/ui/code-block"
 import {
   FILE_LINK_CLASS,
   useFileLinkProps,
@@ -23,6 +29,8 @@ import {
 } from "@/lib/smith/file-references"
 import { hubUrl } from "@/lib/smith/machine"
 import { cn } from "@/lib/utils"
+
+export { copyTextToClipboard } from "@/lib/clipboard"
 
 const highlightCache = new Map<
   string,
@@ -412,114 +420,6 @@ async function getHighlightedCode(code: string, language?: string) {
   return payload
 }
 
-export async function copyTextToClipboard(text: string) {
-  if (window.isSecureContext && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return
-    } catch {
-      // Fall through to the textarea fallback below. The async clipboard API
-      // can be denied even on secure origins.
-    }
-  }
-
-  if (copyTextWithTextarea(text)) {
-    return
-  }
-
-  throw new Error("Unable to copy text")
-}
-
-function copyTextWithTextarea(text: string) {
-  const activeElement =
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null
-  const selection = document.getSelection()
-  const ranges: Range[] = []
-
-  if (selection) {
-    for (let index = 0; index < selection.rangeCount; index += 1) {
-      ranges.push(selection.getRangeAt(index).cloneRange())
-    }
-  }
-
-  const textarea = document.createElement("textarea")
-  textarea.value = text
-  textarea.readOnly = true
-  textarea.setAttribute("aria-hidden", "true")
-  Object.assign(textarea.style, {
-    position: "fixed",
-    top: "0",
-    left: "0",
-    width: "1px",
-    height: "1px",
-    padding: "0",
-    border: "0",
-    opacity: "0",
-    pointerEvents: "none",
-  })
-
-  document.body.append(textarea)
-  textarea.focus()
-  textarea.select()
-  textarea.setSelectionRange(0, textarea.value.length)
-
-  let copied = false
-  try {
-    copied = document.execCommand("copy")
-  } finally {
-    textarea.remove()
-
-    if (selection) {
-      selection.removeAllRanges()
-      for (const range of ranges) {
-        selection.addRange(range)
-      }
-    }
-
-    activeElement?.focus({ preventScroll: true })
-  }
-
-  return copied
-}
-
-const CodeBlockCopyButton = React.memo(function CodeBlockCopyButton({
-  code,
-}: {
-  code: string
-}) {
-  const [copyState, setCopyState] = React.useState<"idle" | "copied" | "error">(
-    "idle"
-  )
-
-  const copyCode = async () => {
-    try {
-      await copyTextToClipboard(code)
-      setCopyState("copied")
-      window.setTimeout(() => setCopyState("idle"), 1400)
-    } catch {
-      setCopyState("error")
-      window.setTimeout(() => setCopyState("idle"), 1400)
-    }
-  }
-
-  return (
-    <Button variant="ghost" size="xs" onClick={copyCode}>
-      {copyState === "copied" ? (
-        <CheckIcon data-icon="inline-start" />
-      ) : (
-        <CopyIcon data-icon="inline-start" />
-      )}
-      {copyState === "copied"
-        ? "Copied"
-        : copyState === "error"
-          ? "Retry"
-          : "Copy"}
-    </Button>
-  )
-})
-
 export const CodeBlock = React.memo(function CodeBlock({
   className,
   code,
@@ -590,29 +490,23 @@ export const CodeBlock = React.memo(function CodeBlock({
   ) : null
 
   return (
-    <div
-      className={cn(
-        "not-prose overflow-hidden rounded-xl border bg-muted/40",
-        className
-      )}
-    >
-      <div className="flex items-center justify-between gap-3 border-b bg-background/80 px-3 py-2 text-xs text-muted-foreground">
-        <div className="truncate font-medium tracking-wide uppercase">
+    <UiCodeBlock className={className}>
+      <CodeBlockHeader>
+        <CodeBlockTitle className="tracking-wide uppercase">
           {displayedLanguage || "code"}
-        </div>
-        <CodeBlockCopyButton code={code} />
-      </div>
-      <pre
+        </CodeBlockTitle>
+        <CodeBlockActions>
+          <CodeBlockCopyButton label value={code} />
+        </CodeBlockActions>
+      </CodeBlockHeader>
+      <CodeBlockContent
         ref={preRef}
         onScroll={onPreScroll}
-        className={cn(
-          "overflow-x-auto bg-transparent px-4 py-3 text-[13px] leading-6 text-foreground",
-          preClassName
-        )}
+        className={cn("overflow-x-auto", preClassName)}
       >
         {highlightedContent || <code>{code}</code>}
-      </pre>
-    </div>
+      </CodeBlockContent>
+    </UiCodeBlock>
   )
 })
 
