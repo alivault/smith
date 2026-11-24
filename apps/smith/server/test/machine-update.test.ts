@@ -229,12 +229,20 @@ class FakeMachine implements UpdatableMachine {
   }
 }
 
-function timingFor(machine: FakeMachine, reconnectMs = 10_000) {
+function timingFor(
+  machine: FakeMachine,
+  reconnectMs = 10_000,
+  published: (version: string) => Promise<boolean | undefined> = async () =>
+    true
+) {
   let now = 0
   return {
     installMs: 60_000,
     reconnectMs,
     pollMs: 1000,
+    publishMs: 60_000,
+    publishPollMs: 20_000,
+    published,
     now: () => now,
     sleep: async (ms: number) => {
       now += ms
@@ -565,4 +573,33 @@ void test("an old smith over SSH gets the install of machine add", async () => {
     updateOverSsh(transport, CACHE, { dataDir: null, label: "w" }, undefined),
     /Give a version/
   )
+})
+
+void test("an update waits until npm serves the new version", async () => {
+  const machine = new FakeMachine("3.1.0")
+  let checks = 0
+  const steps: Array<string | undefined> = []
+  const result = await updateMachine(machine, plan("3.2.0"), {
+    timing: timingFor(machine, 10_000, async () => ++checks >= 3),
+    onChange: (status) => steps.push(status.step),
+  })
+  assert.equal(result.state, "done", result.message)
+  assert.equal(checks, 3)
+  assert.ok(steps.includes("publishing"))
+  assert.ok(steps.indexOf("publishing") < steps.indexOf("reconnecting"))
+})
+
+void test("an update fails when npm never serves the version, and a failed check does not block", async () => {
+  const never = new FakeMachine("3.1.0")
+  const failed = await updateMachine(never, plan("3.2.0"), {
+    timing: timingFor(never, 10_000, async () => false),
+  })
+  assert.equal(failed.state, "failed")
+  assert.match(failed.message ?? "", /npm does not serve/)
+  assert.deepEqual(never.calls, [])
+  const unknown = new FakeMachine("3.1.0")
+  const done = await updateMachine(unknown, plan("3.2.0"), {
+    timing: timingFor(unknown, 10_000, async () => undefined),
+  })
+  assert.equal(done.state, "done", done.message)
 })

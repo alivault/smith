@@ -182,6 +182,7 @@ async function updateMachines(ids: Array<string>) {
 }
 
 const UPDATE_STEPS = {
+  publishing: "Waiting for npm…",
   installing: "Installing…",
   restarting: "Restarting…",
   reconnecting: "Reconnecting…",

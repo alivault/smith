@@ -16,7 +16,11 @@
  * newest version on each machine's channel.
  */
 import { VERSION } from "../config.ts"
-import { compareVersions, isVersion } from "../services/self-update.ts"
+import {
+  compareVersions,
+  isVersion,
+  PACKAGE_NAME,
+} from "../services/self-update.ts"
 import { MachineError, type MachineInfo } from "./manager.ts"
 import { LOCAL_MACHINE_ID } from "./profiles.ts"
 
@@ -35,7 +39,11 @@ export type UpdateRequest = {
   latest?: boolean
 }
 
-export type UpdateStep = "installing" | "restarting" | "reconnecting"
+export type UpdateStep =
+  | "publishing"
+  | "installing"
+  | "restarting"
+  | "reconnecting"
 
 /** The last update of a machine, in the hub's machine list. */
 export type MachineUpdateStatus = {
@@ -88,14 +96,44 @@ export type UpdateTiming = {
   /** How long the machine may take to come back after the restart. */
   reconnectMs: number
   pollMs: number
+  /** How long npm may take to serve the package file of a new release. */
+  publishMs: number
+  publishPollMs: number
+  /**
+   * Whether npm serves the package file of `version`: false while it does
+   * not yet, undefined when the check itself failed.
+   */
+  published(version: string): Promise<boolean | undefined>
   now(): number
   sleep(ms: number): Promise<void>
+}
+
+/**
+ * npm lists a new version some minutes before its package file can be
+ * downloaded; an install in that time fails with a 404.
+ */
+async function npmPublished(version: string) {
+  const name = PACKAGE_NAME.split("/").at(-1)
+  const url = `https://registry.npmjs.org/${PACKAGE_NAME}/-/${name}-${version}.tgz`
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (response.ok) return true
+    return response.status === 404 ? false : undefined
+  } catch {
+    return undefined
+  }
 }
 
 const DEFAULT_TIMING: UpdateTiming = {
   installMs: 10 * 60_000,
   reconnectMs: 2 * 60_000,
   pollMs: 1000,
+  publishMs: 15 * 60_000,
+  publishPollMs: 20_000,
+  published: npmPublished,
   now: () => Date.now(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }
@@ -344,6 +382,7 @@ export async function updateMachine(
   let target = plan.target
   let routeError: string | undefined
   try {
+    if (target) await waitUntilPublished(target, timing, step)
     let result: RouteResult
     try {
       result = await updateWithRoute(machine, target, timing, step)
@@ -386,6 +425,26 @@ export async function updateMachine(
         ? `${message(error)} (the update route failed first: ${routeError})`
         : message(error),
     })
+  }
+}
+
+/** Wait until npm serves the package file of `version`. */
+async function waitUntilPublished(
+  version: string,
+  timing: UpdateTiming,
+  step: (step: UpdateStep) => void
+) {
+  const deadline = timing.now() + timing.publishMs
+  for (;;) {
+    const published = await timing.published(version)
+    // A failed check does not stop the update: the install tells.
+    if (published !== false) return
+    if (timing.now() >= deadline)
+      throw new FinalError(
+        `npm does not serve ${PACKAGE_NAME}@${version} yet; try again in a few minutes`
+      )
+    step("publishing")
+    await timing.sleep(timing.publishPollMs)
   }
 }
 

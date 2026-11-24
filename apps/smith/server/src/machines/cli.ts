@@ -416,11 +416,13 @@ export function updateRequestFromArgs(argv: string[]): UpdateRequest {
 }
 
 function describeStep(step: UpdateStep) {
-  return step === "installing"
-    ? "installing…"
-    : step === "restarting"
-      ? "restarting…"
-      : "waiting until it is back…"
+  return step === "publishing"
+    ? "waiting until npm serves the new version…"
+    : step === "installing"
+      ? "installing…"
+      : step === "restarting"
+        ? "restarting…"
+        : "waiting until it is back…"
 }
 
 /**

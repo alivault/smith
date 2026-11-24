@@ -82,7 +82,7 @@ export type MachineInfo = {
 
 export type MachineUpdateStatus = {
   state: "updating" | "done" | "failed"
-  step?: "installing" | "restarting" | "reconnecting"
+  step?: "publishing" | "installing" | "restarting" | "reconnecting"
   from?: string
   target?: string
   version?: string
