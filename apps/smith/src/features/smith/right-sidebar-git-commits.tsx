@@ -2030,7 +2030,9 @@ function GitCommitSearchBar({
       <InputGroup className={cn("h-8 flex-1", isMobile && "h-11")}>
         <InputGroupAddon>
           <DropdownMenu>
-            <TitleTooltip title="Search by">
+            {/* Only the icon, as the search scope menu in Mail: the
+                placeholder names the mode. */}
+            <TitleTooltip title={`Search by: ${current.label}`}>
               <DropdownMenuTrigger
                 render={
                   <InputGroupButton
@@ -2041,8 +2043,7 @@ function GitCommitSearchBar({
                 }
               >
                 <SearchIcon />
-                {current.label}
-                <ChevronDownIcon className="size-3 opacity-70" />
+                <ChevronDownIcon className="-ml-1 size-3 opacity-70" />
               </DropdownMenuTrigger>
             </TitleTooltip>
             <DropdownMenuContent

@@ -8,7 +8,7 @@ export const GIT_COMMIT_SEARCH_MODES: Array<{
   { value: "message", label: "Message", placeholder: "Search messages" },
   { value: "code", label: "Code", placeholder: "Search code changes" },
   { value: "author", label: "Author", placeholder: "Search authors" },
-  { value: "file", label: "File", placeholder: "File path" },
+  { value: "file", label: "File", placeholder: "Search a file’s history" },
 ]
 
 export const GIT_COMMIT_SEARCH_MAX_LENGTH = 200
