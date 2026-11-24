@@ -4,9 +4,11 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
+  TraceIcon,
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace"
+import { StatusIcon, traceStatus } from "@/components/ai-elements/status-icon"
 import { cn } from "@/lib/utils"
 
 /**
@@ -28,7 +30,10 @@ function ReasoningTrigger({
 }) {
   return (
     <TraceCollapsibleTrigger data-conversation-tool-collapsible-trigger="true">
-      <TraceLine status={streaming ? "running" : undefined}>
+      <TraceLine status={traceStatus(streaming, false)}>
+        <TraceIcon>
+          <StatusIcon status={traceStatus(streaming, false)} />
+        </TraceIcon>
         <TraceTitle>{label}</TraceTitle>
       </TraceLine>
     </TraceCollapsibleTrigger>

@@ -4,7 +4,6 @@ import {
   HourglassIcon,
   MessageCircleQuestionIcon,
   SquareIcon,
-  BotPlusIcon,
 } from "lucide-react"
 import { toast } from "@/lib/smith/toast"
 
@@ -53,6 +52,7 @@ import {
   useToolRenderContext,
   type ToolRendererProps,
 } from "@/features/smith/tool-renderers/registry"
+import { StatusIcon, traceStatus } from "@/components/ai-elements/status-icon"
 import { cn } from "@/lib/utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 
@@ -289,11 +289,9 @@ function SpawnCard({ block }: ToolRendererProps) {
           data-conversation-tool-collapsible-trigger="true"
           disabled={!hasDetails}
         >
-          <TraceLine
-            status={running ? "running" : block.isError ? "error" : undefined}
-          >
+          <TraceLine status={traceStatus(running, block.isError)}>
             <TraceIcon>
-              <BotPlusIcon />
+              <StatusIcon status={traceStatus(running, block.isError)} />
             </TraceIcon>
             <TraceTitle className="shrink-0 overflow-visible font-medium whitespace-nowrap">
               Subagent
@@ -301,11 +299,8 @@ function SpawnCard({ block }: ToolRendererProps) {
             <TraceSummary className="text-foreground">{title}</TraceSummary>
           </TraceLine>
         </TraceCollapsibleTrigger>
-        {live ? (
-          <SubagentStatus subagent={live} />
-        ) : block.running ? (
-          <Spinner size="xs" />
-        ) : null}
+        {/* The status icon of the line shows that it works. */}
+        {live && !live.busy ? <SubagentStatus subagent={live} /> : null}
         {details.agentId ? (
           <Button
             size="xs"

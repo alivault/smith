@@ -2216,6 +2216,7 @@ function ExploreToolGroupCardBody({
               `${block.name || "tool"}:${index}`
             }
             isError={block.isError}
+            running={block.running}
             label={line.label}
             description={
               "file" in line && line.file ? (
