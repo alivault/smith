@@ -319,7 +319,9 @@ function AgentChip({ agent }: { agent: BranchAgent }) {
         }}
       >
         <BotIcon className="size-3 shrink-0" />
-        <span className="truncate">{agent.title}</span>
+        {/* A normal line height, so truncate (overflow hidden) does not
+            cut the descenders of g, p, and y. */}
+        <span className="truncate leading-normal">{agent.title}</span>
       </button>
     </TitleTooltip>
   )
