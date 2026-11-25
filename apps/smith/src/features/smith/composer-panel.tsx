@@ -57,6 +57,10 @@ import {
   hasDraggedFiles,
 } from "@/features/smith/app-shell-utils"
 import { useLatestRef } from "@/features/smith/app-shell-common"
+import {
+  isServerLost,
+  useServerConnection,
+} from "@/lib/smith/server-connection"
 import { promptImageKey } from "@/features/smith/conversation-view"
 import {
   findExactSlashCommand,
@@ -170,6 +174,9 @@ type ComposerPromptEditorProps = {
     isQuotedPrefix: boolean
   ) => Promise<Array<CompletionItem>>
 }
+
+/** The label of the send buttons while the server does not answer. */
+const RECONNECTING_LABEL = "Reconnecting…"
 
 function selectionIsAtStart(textarea: HTMLTextAreaElement | null) {
   if (!textarea) return false
@@ -551,6 +558,10 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
   requestFileCompletions,
 }: ComposerPromptEditorProps) {
   const waitingForAnswer = useWaitingForAnswer()
+  // While the server restarts or does not answer, the draft stays editable,
+  // but nothing goes to the server.
+  const serverLost = isServerLost(useServerConnection())
+  const serverLostRef = useLatestRef(serverLost)
   const slashCommands = useComposerSlashCommands({
     displaySettingsStore,
     agentStore,
@@ -756,6 +767,7 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
     const exact = findExactSlashCommand(draftText, slashCommands)
     if (exact) {
       if (exact.command.kind === "builtin") {
+        if (serverLostRef.current) return
         dismissMenus()
         onRunBuiltinSlashCommand(exact.command.name, exact.args)
         return
@@ -772,6 +784,7 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
     if (slashMenuState && selectedSlashCommand) {
       dismissMenus()
       if (selectedSlashCommand.kind === "builtin") {
+        if (serverLostRef.current) return
         onRunBuiltinSlashCommand(selectedSlashCommand.name, "")
         return
       }
@@ -780,6 +793,7 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
     }
 
     syncDraftToParent(draftText, draftSkill)
+    if (serverLostRef.current) return
     onSubmitPrompt(streamingBehavior)
   }
 
@@ -1166,21 +1180,28 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
       >
         {!acceptFollowUps ? (
           <TitleTooltip
-            title="Send"
-            rows={[
-              { title: "Send", kbd: "Enter" },
-              { title: "New line", kbd: "⇧ Enter" },
-            ]}
+            title={serverLost ? RECONNECTING_LABEL : "Send"}
+            rows={
+              serverLost
+                ? undefined
+                : [
+                    { title: "Send", kbd: "Enter" },
+                    { title: "New line", kbd: "⇧ Enter" },
+                  ]
+            }
           >
             <Button
               size="icon"
-              className="cursor-pointer"
+              className="cursor-pointer aria-disabled:cursor-default aria-disabled:opacity-50"
               disabled={
                 disabled ||
+                serverLost ||
                 blockInitialSubmit ||
                 (!hasSubmittableContent && !isStreaming && !slashMenuState)
               }
-              aria-label="Send"
+              // Keep the tooltip: it tells why the button waits.
+              focusableWhenDisabled={serverLost}
+              aria-label={serverLost ? RECONNECTING_LABEL : "Send"}
               onClick={() => {
                 runPrimaryComposerAction(undefined)
               }}
@@ -1192,25 +1213,31 @@ const ComposerPromptEditor = React.memo(function ComposerPromptEditor({
 
         {acceptFollowUps ? (
           <>
-            <TitleTooltip title="Follow-up" kbd="⌥ Enter">
+            <TitleTooltip
+              title={serverLost ? RECONNECTING_LABEL : "Follow-up"}
+              kbd={serverLost ? undefined : "⌥ Enter"}
+            >
               <Button
                 variant="outline"
                 size="icon"
                 className="cursor-pointer"
-                aria-label="Follow-up"
-                disabled={disabled || !hasSubmittableContent}
+                aria-label={serverLost ? RECONNECTING_LABEL : "Follow-up"}
+                disabled={disabled || serverLost || !hasSubmittableContent}
                 onClick={() => runPrimaryComposerAction("followUp")}
               >
                 <ListEndIcon />
               </Button>
             </TitleTooltip>
-            <TitleTooltip title="Steer" kbd="Enter">
+            <TitleTooltip
+              title={serverLost ? RECONNECTING_LABEL : "Steer"}
+              kbd={serverLost ? undefined : "Enter"}
+            >
               <Button
                 variant="outline"
                 size="icon"
                 className="cursor-pointer"
-                aria-label="Steer"
-                disabled={disabled || !hasSubmittableContent}
+                aria-label={serverLost ? RECONNECTING_LABEL : "Steer"}
+                disabled={disabled || serverLost || !hasSubmittableContent}
                 onClick={() => runPrimaryComposerAction("steer")}
               >
                 <ListStartIcon />

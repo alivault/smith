@@ -10,7 +10,9 @@ import {
 import {
   checkServerConnection,
   markServerOnline,
+  markServerRestarting,
   onServerReconnect,
+  SERVER_RESTARTING_EVENT,
 } from "@/lib/smith/server-connection"
 
 /**
@@ -121,6 +123,10 @@ function connect() {
     try {
       data = JSON.parse(event.data) as typeof data
     } catch {
+      return
+    }
+    if (data.type === SERVER_RESTARTING_EVENT) {
+      markServerRestarting()
       return
     }
     if (data.type !== "machines" || !Array.isArray(data.machines)) return

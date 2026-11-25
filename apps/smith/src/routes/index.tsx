@@ -8,7 +8,7 @@ import { PortalContainerProvider } from "@/components/ui/portal-container"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { SmithAppShell } from "@/features/smith/app-shell"
 import { MachinesDialogController } from "@/features/smith/machines"
-import { ServerUnreachableOverlay } from "@/features/smith/server-unreachable-overlay"
+import { ServerConnectionPill } from "@/features/smith/server-connection-pill"
 import { WindowSidebar } from "@/features/smith/window-sidebar"
 import type { SelectAgentNavigationOptions } from "@/features/smith/app-shell-types"
 import {
@@ -18,7 +18,6 @@ import {
 } from "@/lib/smith/machine"
 import { MachineProvider } from "@/lib/smith/machine-context"
 import { queryClientForMachine } from "@/lib/smith/query-client"
-import { useServerConnection } from "@/lib/smith/server-connection"
 
 const indexSearchSchema = z.object({
   agent: z.string().optional(),
@@ -57,7 +56,6 @@ function App() {
   const { agent, machine: machineParam } = Route.useSearch()
   const navigate = Route.useNavigate()
   const shownMachine = normalizeMachineId(machineParam)
-  const serverUnreachable = useServerConnection() === "unreachable"
 
   const [workspaces, setWorkspaces] = React.useState<MachineWorkspaces>(() => ({
     [shownMachine]: { agentId: agent },
@@ -137,10 +135,7 @@ function App() {
 
   return (
     <SidebarProvider className="h-full flex-col overflow-hidden bg-background [--header-height:calc(3rem+env(safe-area-inset-top))]">
-      <div
-        className="flex min-h-0 flex-1 overflow-hidden"
-        inert={serverUnreachable}
-      >
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <WindowSidebar shownMachineId={shownMachine} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {Object.entries(workspaces).map(([machineId, workspace]) => (
@@ -163,7 +158,7 @@ function App() {
         </div>
       </div>
       <MachinesDialogController />
-      {serverUnreachable ? <ServerUnreachableOverlay /> : null}
+      <ServerConnectionPill />
     </SidebarProvider>
   )
 }

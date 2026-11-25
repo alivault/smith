@@ -1331,6 +1331,9 @@ export type SidebarStateEvent = SidebarStateSnapshot & {
   clientId: string
 }
 
+/** The server restarts now (server `SERVER_RESTARTING_EVENT`). */
+export type ServerRestartingEvent = { type: "server_restarting" }
+
 export type SmithServerEvent =
   | StateSyncPayload
   | ConversationDeltaEvent
@@ -1348,6 +1351,7 @@ export type SmithServerEvent =
   | SidebarStateEvent
   | PreviewAvailableEvent
   | OpenFileEvent
+  | ServerRestartingEvent
 
 export function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
   return Boolean(

@@ -58,7 +58,9 @@ import { useMachineId } from "@/lib/smith/machine-context"
 import {
   checkServerConnection,
   markServerOnline,
+  markServerRestarting,
   onServerReconnect,
+  SERVER_RESTARTING_EVENT,
 } from "@/lib/smith/server-connection"
 
 const RESUME_RECONNECT_AFTER_MS = 30_000
@@ -842,6 +844,13 @@ export function useAppShellAgentSync({
       rememberStoredEventsLastId(machineId, viewerContextId, lastEventId)
     }
     const payload = JSON.parse(event.data) as SmithServerEvent
+
+    if (payload.type === SERVER_RESTARTING_EVENT) {
+      // Only the restart of this page's own server (the hub) pauses the
+      // page. A remote machine's stream comes through the hub.
+      if (machineId === LOCAL_MACHINE_ID) markServerRestarting()
+      return
+    }
 
     if (isConversationDeltaEvent(payload)) {
       const previousState = agentStateRef.current

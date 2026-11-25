@@ -4,13 +4,14 @@
  *   offline machine fails with the same message, so without this a page that
  *   sends many changes shows many equal toasts.
  * - Toasts about an unreachable Smith server merge into one toast, and the
- *   page shows no such toast while it shows the "server unreachable" view.
+ *   page shows no such toast while it shows the "reconnecting" pill.
  * Import `toast` from here, not from "sonner".
  */
 import { toast as sonnerToast, type ExternalToast } from "sonner"
 
 import { findMachineOfflineMessage } from "@/lib/smith/machine"
 import {
+  isServerLost,
   onServerConnectionChange,
   SERVER_UNREACHABLE_MESSAGE,
   serverConnectionState,
@@ -18,7 +19,7 @@ import {
 
 const SERVER_UNREACHABLE_TOAST_ID = "server-unreachable"
 
-// The view replaces the toast; a reconnect makes the toast old news.
+// The pill replaces the toast; a reconnect makes the toast old news.
 onServerConnectionChange(() => {
   sonnerToast.dismiss(SERVER_UNREACHABLE_TOAST_ID)
 })
@@ -48,7 +49,7 @@ function isServerUnreachable(message: ToastMessage, data?: ExternalToast) {
 function dedupeOffline(show: ShowToast): ShowToast {
   return (message, data) => {
     if (isServerUnreachable(message, data)) {
-      if (serverConnectionState() === "unreachable")
+      if (isServerLost(serverConnectionState()))
         return SERVER_UNREACHABLE_TOAST_ID
       return sonnerToast.error(SERVER_UNREACHABLE_MESSAGE, {
         ...data,
