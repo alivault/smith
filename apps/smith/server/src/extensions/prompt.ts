@@ -59,6 +59,9 @@ function rules(names: readonly string[]) {
     add("Use bash for file operations like ls, rg, find")
   for (const name of names)
     for (const rule of TOOL_GUIDELINES[name] ?? []) add(rule)
+  add(
+    "To draw a diagram (a flow, a sequence, a state machine, a dependency graph), write a ```mermaid code block; the user sees it drawn."
+  )
   add("Be concise in your responses")
   add("Show file paths clearly when working with files")
   return result.map((rule) => `- ${rule}`).join("\n")

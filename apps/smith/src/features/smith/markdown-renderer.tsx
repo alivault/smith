@@ -220,8 +220,64 @@ function MarkdownPre({ children, node, ...props }: MarkdownPreProps) {
   const codeBlockStreaming =
     streaming && !markdownNodeIsInFenceRange(node, completedFenceRanges)
 
+  if (language?.toLowerCase() === "mermaid" && !codeBlockStreaming)
+    return <MermaidCodeBlock code={code} />
+
   return (
     <CodeBlock code={code} language={language} streaming={codeBlockStreaming} />
+  )
+}
+
+const MermaidView = React.lazy(
+  () => import("@/features/smith/tool-renderers/mermaid-view")
+)
+
+/**
+ * A complete ```mermaid block, drawn as a diagram, with a switch to its
+ * code. While the reply streams, the block shows as code. When Mermaid
+ * cannot read it, it shows the code with the error.
+ */
+function MermaidCodeBlock({ code }: { code: string }) {
+  const [view, setView] = React.useState<"diagram" | "code">("diagram")
+  const [error, setError] = React.useState("")
+  React.useEffect(() => setError(""), [code])
+  const showDiagram = view === "diagram" && !error
+  return (
+    <UiCodeBlock>
+      <CodeBlockHeader>
+        <CodeBlockTitle className="tracking-wide uppercase">
+          Mermaid
+        </CodeBlockTitle>
+        <CodeBlockActions>
+          {error ? null : (
+            <button
+              type="button"
+              className="rounded-sm px-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setView(view === "diagram" ? "code" : "diagram")}
+            >
+              {view === "diagram" ? "Code" : "Diagram"}
+            </button>
+          )}
+          <CodeBlockCopyButton label value={code} />
+        </CodeBlockActions>
+      </CodeBlockHeader>
+      {showDiagram ? (
+        <div className="bg-background p-3">
+          <React.Suspense fallback={<div className="min-h-16" />}>
+            <MermaidView source={code} onError={setError} />
+          </React.Suspense>
+        </div>
+      ) : (
+        <CodeBlockContent className="overflow-x-auto">
+          <code>{code}</code>
+        </CodeBlockContent>
+      )}
+      {error ? (
+        <p className="border-t px-3 py-1.5 text-xs text-destructive">
+          Mermaid could not draw this: {error.split("\n")[0]}
+        </p>
+      ) : null}
+    </UiCodeBlock>
   )
 }
 
