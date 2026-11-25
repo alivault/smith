@@ -8,6 +8,12 @@ const MAX_REPLAY_EVENTS = 512
 
 export type ServerEventPayload = { type: string; [key: string]: unknown }
 
+/**
+ * The server sends this event just before it exits for a restart, so that
+ * the page shows "Restarting" instead of a lost connection.
+ */
+export const SERVER_RESTARTING_EVENT = "server_restarting"
+
 export type ServerEvent = {
   readonly sequence: number
   /** Only for this viewer context; absent goes to every context. */

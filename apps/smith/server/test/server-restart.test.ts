@@ -29,6 +29,23 @@ async function startedState(data: string, notPid?: number) {
   throw new Error("The server did not start")
 }
 
+/** The text of a stream until the server closes it (or cuts it off). */
+async function readUntilClosed(response: Response) {
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      text += decoder.decode(value, { stream: true })
+    }
+  } catch {
+    // A closed connection ends the stream with an error.
+  }
+  return text
+}
+
 function serverArgs(data: string) {
   return [
     "dist/smith-server.mjs",
@@ -64,6 +81,9 @@ void test("a supervised server exits with the restart code", async () => {
     }
     assert.deepEqual(health.restart, {})
     assert.equal(health.update?.available, false)
+    // The pages hear of the restart before the connections close.
+    const events = await fetch(`${url}/api/machines/events`)
+    const eventText = readUntilClosed(events)
     const response = await fetch(`${url}/api/system/restart`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -71,6 +91,7 @@ void test("a supervised server exits with the restart code", async () => {
     })
     assert.equal(response.status, 200)
     assert.equal(await exited, 75)
+    assert.match(await eventText, /"type":"server_restarting"/)
     await assert.rejects(readFile(join(data, "server.lock")), /ENOENT/)
   } finally {
     if (child.exitCode === null && child.signalCode === null) {

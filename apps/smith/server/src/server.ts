@@ -19,7 +19,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { conversationIdOf, parseAgentId, Agents } from "./core/agents.ts"
 import { BrowserDoc } from "./extensions/browser.ts"
 import { Viewers } from "./core/viewers.ts"
-import { EventHub } from "./events.ts"
+import { EventHub, SERVER_RESTARTING_EVENT } from "./events.ts"
 import { HostBridge } from "./extensions/host.ts"
 import { BrowserManager } from "./services/browser.ts"
 import {
@@ -75,10 +75,18 @@ export type SmithServer = {
   readonly machines: MachineManager
   port(): number
   /** Stop taking new work, wait for turns to finish (up to `timeoutMs`), and close. */
-  shutdown(options?: { drain?: boolean; timeoutMs?: number }): Promise<void>
+  shutdown(options?: {
+    drain?: boolean
+    timeoutMs?: number
+    /** The server starts again: tell the pages before it closes. */
+    restart?: boolean
+  }): Promise<void>
   /** Stop the wait of a draining shutdown: close now. */
   hurry(): void
 }
+
+/** How long a restart waits for its `server_restarting` event to leave. */
+const RESTART_EVENT_FLUSH_MS = 50
 
 export async function startServer(options: {
   paths: ServerPaths
@@ -802,6 +810,13 @@ export async function startServer(options: {
           ) {
             await new Promise((resolve) => setTimeout(resolve, 500))
           }
+        }
+        if (shutdownOptions.restart) {
+          hub.push({ type: SERVER_RESTARTING_EVENT })
+          // A moment for the event to leave before the connections close.
+          await new Promise((resolve) =>
+            setTimeout(resolve, RESTART_EVENT_FLUSH_MS)
+          )
         }
         host.stopping = true
         updater.stop()

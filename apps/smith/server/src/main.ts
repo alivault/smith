@@ -494,7 +494,7 @@ async function serve(options: Map<string, string | boolean>) {
       process.exit(1)
     }, limit)
     try {
-      await server.shutdown({ drain })
+      await server.shutdown({ drain, restart })
     } catch (error) {
       console.error("[smith] shutdown failed:", error)
     }

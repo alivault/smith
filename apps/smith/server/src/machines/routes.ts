@@ -15,7 +15,7 @@ import type { LocalAgentOps } from "../control/agent-ops.ts"
 import type { Runtime } from "../core/runtime.ts"
 import type { Viewers } from "../core/viewers.ts"
 import type { Agents } from "../core/agents.ts"
-import type { EventHub } from "../events.ts"
+import { SERVER_RESTARTING_EVENT, type EventHub } from "../events.ts"
 import {
   ApiError,
   badRequest,
@@ -412,10 +412,17 @@ export function addHubRoutes(
     const stopLocal = onSummaryChange(hub, viewers, send)
     const stopRemote = machines.subscribe(send)
     const stopUpdates = updater.subscribe(send)
+    // The page also learns of a restart here: the event stream of a hidden
+    // machine shell is closed.
+    const stopRestart = hub.subscribe((event) => {
+      if (event.payload.type === SERVER_RESTARTING_EVENT)
+        stream.send(event.payload)
+    })
     void stream.closed.then(() => {
       stopLocal()
       stopRemote()
       stopUpdates()
+      stopRestart()
       if (timer) clearTimeout(timer)
     })
     return HANDLED
