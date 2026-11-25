@@ -9,7 +9,8 @@
  *   pnpm media --no-build       # use the built web and server as they are
  *   pnpm media --out DIR        # the output folder (default: <tmp>/smith-demo/out)
  *   pnpm media --install-only   # copy the files of the last run; take nothing
- *   pnpm media --dry            # only open the new agent page (dry.png); no model
+ *   pnpm media --dry            # only open the new agent page (dry-dark.png,
+ *                               # dry-light.png); no model
  *
  * It makes the demo project (`demo-project.mjs`) and starts its own Smith,
  * with its own data folder and port, so your Smith and its agents are not
@@ -18,16 +19,24 @@
  * minutes. It gets an agent folder of its own, with a link to your
  * `auth.json` and only the model lines of your `settings.json`, so your
  * AGENTS.md, skills, and extensions do not change what the agent does.
- * Chromium draws the pages, and ffmpeg makes the video (and cwebp the
- * poster, when ffmpeg has no libwebp).
+ * Chromium draws the pages, and ffmpeg makes the videos (and cwebp the
+ * posters, when ffmpeg has no libwebp).
+ *
+ * The video is recorded two times from one run: a dark page and a light
+ * page watch the same agent and do the same steps at the same time. Only
+ * the dark page sends the prompt; the light page types it too, and then
+ * opens the agent that the dark page made. So the model works one time,
+ * and the two videos show the same story.
  *
  * The output folder gets:
  *   smith-workspace.png       desktop, dark (2898×1916)
  *   smith-workspace-alt.png   desktop, light
  *   smith-mobile.png          phone, dark (1170×2532)
  *   smith-mobile-alt.png      phone, light
- *   smith-child-sessions-demo.mp4 and .webp (the poster)
- *   review.png               frames of the video, to look at it fast
+ *   smith-child-sessions-demo-dark.mp4 and .webp (the poster)
+ *   smith-child-sessions-demo-light.mp4 and .webp
+ *   review.png               frames of the videos (dark above, light
+ *                            below), to look at them fast
  *
  * To change the story, change PROMPT and the steps in `recordRun`. To
  * change what a screenshot shows, change `desktopShot` or `mobileShot`.
@@ -77,9 +86,14 @@ const INSTALL = {
   "smith-workspace-alt.png": ["apps/website/site/screenshots"],
   "smith-mobile.png": ["apps/website/site/screenshots"],
   "smith-mobile-alt.png": ["apps/website/site/screenshots"],
-  "smith-child-sessions-demo.mp4": ["apps/website/site/videos"],
-  "smith-child-sessions-demo.webp": ["apps/website/site/videos"],
+  "smith-child-sessions-demo-dark.mp4": ["apps/website/site/videos"],
+  "smith-child-sessions-demo-dark.webp": ["apps/website/site/videos"],
+  "smith-child-sessions-demo-light.mp4": ["apps/website/site/videos"],
+  "smith-child-sessions-demo-light.webp": ["apps/website/site/videos"],
 }
+
+/** The color schemes of the video; the first one drives the run. */
+const VIDEO_SCHEMES = ["dark", "light"]
 
 function parseOptions(argv) {
   const has = (flag) => argv.includes(flag)
@@ -227,6 +241,29 @@ async function firstAgent(url) {
   throw new Error("The agent did not start.")
 }
 
+/** Waits until the demo Smith has `count` agents. */
+async function waitForAgents(url, count) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const { agents } = await fetch(`${url}/api/machine/agents`).then((r) =>
+      r.json()
+    )
+    if ((agents?.length ?? 0) >= count) return
+    await sleep(500)
+  }
+  throw new Error(`The demo Smith did not get ${count} agents.`)
+}
+
+/**
+ * Open the first subagent: with the Open button of its line in the
+ * conversation, or, when the turn folded it, from the Agent tab.
+ */
+async function openSubagent(page) {
+  const line = page.getByRole("button", { name: "Open", exact: true })
+  const row = page.locator('.group\\/row > button[aria-label^="Open "]')
+  const target = (await line.first().isVisible()) ? line : row
+  await target.first().click()
+}
+
 /** Open the Agent tab of the right sidebar (desktop). */
 async function openAgentTab(page) {
   const tab = page.locator("button[aria-pressed]:visible", {
@@ -239,128 +276,180 @@ async function openAgentTab(page) {
   await tab.first().click()
 }
 
+/** Record the screencast of a page into `framesDir`. */
+async function startRecording(view, framesDir, t0) {
+  mkdirSync(framesDir, { recursive: true })
+  const { page } = view
+  const cdp = await view.context.newCDPSession(page)
+  cdp.on("Page.screencastFrame", async (frame) => {
+    const name = join(
+      framesDir,
+      `f${String(view.frames.length).padStart(5, "0")}.jpg`
+    )
+    writeFileSync(name, Buffer.from(frame.data, "base64"))
+    view.frames.push({ name, t: frame.metadata.timestamp - t0 })
+    await cdp
+      .send("Page.screencastFrameAck", { sessionId: frame.sessionId })
+      .catch(() => {})
+  })
+  await cdp.send("Page.startScreencast", {
+    format: "jpeg",
+    quality: 92,
+    maxWidth: 2880,
+    maxHeight: 1800,
+  })
+  // A screencast sends frames only when the page changes; this keeps
+  // them coming, so the video has no long gaps.
+  const tick = setInterval(() => {
+    page
+      .evaluate(() => (document.body.dataset.tick = String(Date.now())))
+      .catch(() => {})
+  }, 100)
+  view.stopRecording = async () => {
+    clearInterval(tick)
+    await cdp.send("Page.stopScreencast").catch(() => {})
+  }
+}
+
 /**
  * Run the demo in a browser: type the prompt, show the subagents, open one,
- * and wait until all work ends. With `framesDir`, record the page.
+ * and wait until all work ends. With `framesDir`, record a dark and a light
+ * page that do the same steps (`framesDir/<scheme>`). Only the first page
+ * sends the prompt; the others open the agent that it made.
  */
-async function recordRun(browser, url, project, framesDir, dryShot, errorShot) {
-  const context = await browser.newContext({ ...VIDEO, colorScheme: "dark" })
-  const page = await context.newPage()
-  await page.goto(url)
-  await page.waitForSelector("textarea")
-  // A new agent in the demo project (the button shows on hover).
-  const create = page.locator(
-    `button[aria-label="Create an agent in ${project}"]`
-  )
-  await create.first().click({ force: true })
-  await page.mouse.move(900, 300)
-  await page.waitForTimeout(2000)
-  if (dryShot) {
-    await page.screenshot({ path: dryShot })
-    await context.close()
-    return undefined
+async function recordRun(browser, url, project, framesDir, dryDir, errorShot) {
+  const schemes =
+    framesDir || dryDir ? VIDEO_SCHEMES : VIDEO_SCHEMES.slice(0, 1)
+  const views = []
+  for (const scheme of schemes) {
+    const context = await browser.newContext({ ...VIDEO, colorScheme: scheme })
+    views.push({ scheme, context, page: await context.newPage(), frames: [] })
   }
-
-  const t0 = Date.now() / 1000
-  const marks = {}
-  const mark = (name) => {
-    marks[name] = Date.now() / 1000 - t0
-    console.log(`  ${name} at ${marks[name].toFixed(1)} s`)
-  }
-  const frames = []
-  let cdp
-  let tick
-  if (framesDir) {
-    mkdirSync(framesDir, { recursive: true })
-    cdp = await context.newCDPSession(page)
-    cdp.on("Page.screencastFrame", async (frame) => {
-      const name = join(
-        framesDir,
-        `f${String(frames.length).padStart(5, "0")}.jpg`
-      )
-      writeFileSync(name, Buffer.from(frame.data, "base64"))
-      frames.push({ name, t: frame.metadata.timestamp - t0 })
-      await cdp
-        .send("Page.screencastFrameAck", { sessionId: frame.sessionId })
-        .catch(() => {})
-    })
-    await cdp.send("Page.startScreencast", {
-      format: "jpeg",
-      quality: 92,
-      maxWidth: 2880,
-      maxHeight: 1800,
-    })
-    // A screencast sends frames only when the page changes; this keeps
-    // them coming, so the video has no long gaps.
-    tick = setInterval(() => {
-      page
-        .evaluate(() => (document.body.dataset.tick = String(Date.now())))
-        .catch(() => {})
-    }, 100)
-  }
+  const [driver, ...followers] = views
+  const all = (step) => Promise.all(views.map((view) => step(view.page, view)))
   try {
-    await page.waitForTimeout(1500)
-    await page.click("textarea")
-    await page.keyboard.type(PROMPT, { delay: 25 })
-    await page.waitForTimeout(700)
-    await page.keyboard.press("Enter")
-    mark("sent")
-    const parentUrl = `${url}/?agent=${await firstAgent(url)}`
-    await page.waitForFunction(
-      () =>
-        [...document.querySelectorAll("button")].filter(
-          (button) => button.textContent.trim() === "Open"
-        ).length >= 2,
-      null,
-      { timeout: 300_000 }
+    await all(async (page) => {
+      await page.goto(url)
+      await page.waitForSelector("textarea")
+      // A new agent in the demo project (the button shows on hover).
+      const create = page.locator(
+        `button[aria-label="Create an agent in ${project}"]`
+      )
+      await create.first().click({ force: true })
+      await page.mouse.move(900, 300)
+      await page.waitForTimeout(2000)
+    })
+    if (dryDir) {
+      await all((page, view) =>
+        page.screenshot({ path: join(dryDir, `dry-${view.scheme}.png`) })
+      )
+      return undefined
+    }
+
+    const t0 = Date.now() / 1000
+    const marks = {}
+    const mark = (name) => {
+      marks[name] = Date.now() / 1000 - t0
+      console.log(`  ${name} at ${marks[name].toFixed(1)} s`)
+    }
+    if (framesDir)
+      await Promise.all(
+        views.map((view) =>
+          startRecording(view, join(framesDir, view.scheme), t0)
+        )
+      )
+    await driver.page.waitForTimeout(1500)
+    await all(async (page) => {
+      await page.click("textarea")
+      await page.keyboard.type(PROMPT, { delay: 25 })
+    })
+    await driver.page.waitForTimeout(700)
+    const prompted = driver.page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/prompt" &&
+        response.request().method() === "POST"
     )
+    await driver.page.keyboard.press("Enter")
+    mark("sent")
+    const agentId =
+      (await prompted.then((response) => response.json()).catch(() => ({})))
+        .agentId ?? (await firstAgent(url))
+    // The other pages leave their draft for the agent, in the app (as the
+    // Open button of a subagent does), so the page does not load again.
+    await Promise.all(
+      followers.map(({ page }) =>
+        page.evaluate(
+          (id) =>
+            window.dispatchEvent(
+              new CustomEvent("smith:open-agent", { detail: { agentId: id } })
+            ),
+          agentId
+        )
+      )
+    )
+    const parentUrl = `${url}/?agent=${agentId}`
+    // The parent and its two subagents. The page can fold the subagent
+    // lines into "Worked for" soon after, so do not wait for them there.
+    await waitForAgents(url, 3)
     mark("spawned")
-    await page.waitForTimeout(3000)
-    await openAgentTab(page)
+    await driver.page.waitForTimeout(3000)
+    await all(openAgentTab)
     mark("agent-tab")
-    await page.waitForTimeout(5000)
-    await page
-      .getByRole("button", { name: "Open", exact: true })
-      .first()
-      .click()
+    await driver.page.waitForTimeout(5000)
+    await all(openSubagent)
     mark("child-open")
-    await page.waitForTimeout(8000)
-    await page.goBack()
-    await page.waitForTimeout(1500)
-    if (page.url() !== parentUrl) await page.goto(parentUrl)
+    await driver.page.waitForTimeout(8000)
+    await all(async (page) => {
+      await page.goBack()
+      await page.waitForTimeout(1500)
+      if (page.url() !== parentUrl) await page.goto(parentUrl)
+    })
     mark("parent-back")
     // Done: nothing worked for 6 s in a row.
     let idleSince
     const start = Date.now()
     while (Date.now() - start < 20 * 60_000) {
-      await page.waitForTimeout(1000)
-      if (await busy(page)) idleSince = undefined
+      await driver.page.waitForTimeout(1000)
+      if (await busy(driver.page)) idleSince = undefined
       else if (idleSince === undefined) idleSince = Date.now()
       else if (Date.now() - idleSince > 6000) break
     }
     mark("done")
-    const jump = page.locator(
-      'button[aria-label="Jump to latest message"]:not([disabled])'
-    )
-    if (await jump.count()) await jump.first().click({ timeout: 2000 })
-    await page.waitForTimeout(5000)
+    await all(async (page) => {
+      const jump = page.locator(
+        'button[aria-label="Jump to latest message"]:not([disabled])'
+      )
+      if (await jump.count()) await jump.first().click({ timeout: 2000 })
+    })
+    await driver.page.waitForTimeout(5000)
     mark("end")
-    return { agentUrl: parentUrl, frames, marks }
+    return {
+      agentUrl: parentUrl,
+      marks,
+      videos: views.map(({ scheme, frames }) => ({ scheme, frames })),
+    }
   } catch (error) {
-    if (errorShot) await page.screenshot({ path: errorShot }).catch(() => {})
+    if (errorShot)
+      await all((page, view) =>
+        page.screenshot({
+          path: errorShot.replace(/\.png$/, `-${view.scheme}.png`),
+        })
+      ).catch(() => {})
     throw error
   } finally {
-    if (cdp) await cdp.send("Page.stopScreencast").catch(() => {})
-    if (tick) clearInterval(tick)
-    await context.close()
+    for (const view of views) {
+      await view.stopRecording?.()
+      await view.context.close()
+    }
   }
 }
 
 /**
- * Make the video from the frames. The parent's planning plays at 2× and
- * the wait for the subagents at 4×. Returns the poster time.
+ * Make a video and its poster from the frames. The parent's planning plays
+ * at 2× and the wait for the subagents at 4×. Returns the video path and
+ * its length in seconds.
  */
-function encodeVideo(frames, marks, out) {
+function encodeVideo(frames, marks, out, scheme) {
   const speed = (t) => {
     if (marks.sent + 1 < t && t < marks.spawned) return 2
     if (marks["parent-back"] + 1 < t && t < marks.done - 1) return 4
@@ -381,7 +470,8 @@ function encodeVideo(frames, marks, out) {
   lines.push(`file '${frames.at(-1).name}'`)
   const list = join(dirname(frames[0].name), "list.txt")
   writeFileSync(list, `${lines.join("\n")}\n`)
-  const video = join(out, "smith-child-sessions-demo.mp4")
+  const base = `smith-child-sessions-demo-${scheme}`
+  const video = join(out, `${base}.mp4`)
   run("ffmpeg", [
     "-loglevel",
     "error",
@@ -409,22 +499,40 @@ function encodeVideo(frames, marks, out) {
     "+faststart",
     video,
   ])
-  writePoster(video, poster, join(out, "smith-child-sessions-demo.webp"))
+  writePoster(video, poster, join(out, `${base}.webp`))
+  console.log(
+    `  ${scheme} video: ${Math.round(time)} s, poster at ${poster.toFixed(1)} s`
+  )
+  return { video, length: time }
+}
+
+/**
+ * review.png: 16 frames of each video, spread over its length, one 4×4
+ * grid per video, the grids one above the other.
+ */
+function writeReview(videos, target) {
+  const inputs = videos.flatMap(({ video }) => ["-i", video])
+  const grids = videos.map(
+    ({ length }, index) =>
+      `[${index}:v]fps=${(16 / length).toFixed(5)},scale=640:-2,tile=4x4[g${index}]`
+  )
+  const stack =
+    videos.length > 1
+      ? `;${videos.map((_, index) => `[g${index}]`).join("")}vstack=inputs=${videos.length}[out]`
+      : ";[g0]null[out]"
   run("ffmpeg", [
     "-loglevel",
     "error",
     "-y",
-    "-i",
-    video,
-    "-vf",
-    "fps=1/4,scale=640:-1,tile=4x4",
+    ...inputs,
+    "-filter_complex",
+    `${grids.join(";")}${stack}`,
+    "-map",
+    "[out]",
     "-frames:v",
     "1",
-    join(out, "review.png"),
+    target,
   ])
-  console.log(
-    `  video: ${Math.round(time)} s, poster at ${poster.toFixed(1)} s`
-  )
 }
 
 /** True if this ffmpeg can write WebP (some builds have no libwebp). */
@@ -593,16 +701,21 @@ async function main() {
       smith.url,
       project,
       options.video && !options.dry ? join(root, "frames") : undefined,
-      options.dry ? join(options.out, "dry.png") : undefined,
+      options.dry ? options.out : undefined,
       join(options.out, "error.png")
     )
     if (!result) {
-      console.log(`Dry run: see ${join(options.out, "dry.png")}`)
+      console.log(
+        `Dry run: see dry-dark.png and dry-light.png in ${options.out}`
+      )
       return
     }
     if (options.video) {
-      console.log("Making the video…")
-      encodeVideo(result.frames, result.marks, options.out)
+      console.log("Making the videos…")
+      const videos = result.videos.map(({ scheme, frames }) =>
+        encodeVideo(frames, result.marks, options.out, scheme)
+      )
+      writeReview(videos, join(options.out, "review.png"))
     }
     if (options.screenshots) {
       console.log("Taking the screenshots…")
@@ -627,7 +740,7 @@ async function main() {
   )
   console.log(`\nDone. Files in ${options.out}:`)
   for (const name of made) console.log(`  ${name}`)
-  if (options.video) console.log("  review.png (frames of the video)")
+  if (options.video) console.log("  review.png (frames of the videos)")
   if (options.install) install(options.out, made)
   else console.log("To use them: pnpm media --install-only")
 }

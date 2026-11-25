@@ -180,16 +180,51 @@
           One agent starts two subagents, each in its own Git worktree. When
           both are done, it merges their branches and runs the tests.
         </p>
+        <!-- A dark and a light video of the same run. The media of a source
+             picks one when the page loads; the script sets the poster and
+             changes both when the system scheme changes. -->
         <video
-          src="/videos/smith-child-sessions-demo.mp4"
-          poster="/videos/smith-child-sessions-demo.webp"
+          id="demo-video"
           width="1920"
           height="1200"
           controls
           muted
           playsinline
           preload="metadata"
-        ></video>
+        >
+          <source
+            src="/videos/smith-child-sessions-demo-dark.mp4"
+            type="video/mp4"
+            media="(prefers-color-scheme: dark)"
+          />
+          <source
+            src="/videos/smith-child-sessions-demo-light.mp4"
+            type="video/mp4"
+          />
+        </video>
+        <script>
+          {
+            const video = document.getElementById("demo-video")
+            const dark = matchMedia("(prefers-color-scheme: dark)")
+            const file = () =>
+              `/videos/smith-child-sessions-demo-${dark.matches ? "dark" : "light"}`
+            video.poster = `${file()}.webp`
+            dark.addEventListener("change", () => {
+              const { currentTime, paused } = video
+              video.poster = `${file()}.webp`
+              video.src = `${file()}.mp4`
+              if (!currentTime) return
+              video.addEventListener(
+                "loadedmetadata",
+                () => {
+                  video.currentTime = Math.min(currentTime, video.duration)
+                  if (!paused) video.play().catch(() => {})
+                },
+                { once: true }
+              )
+            })
+          }
+        </script>
       </section>
 
       <section class="split">
