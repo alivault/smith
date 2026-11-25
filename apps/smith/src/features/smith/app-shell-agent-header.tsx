@@ -33,6 +33,7 @@ import {
 import type { AppShellDisplaySettingsState } from "@/features/smith/app-shell-types"
 import {
   appShortcut,
+  commandPaletteShortcut,
   formatShortcutLabel,
 } from "@/features/smith/keyboard-shortcuts"
 import { HeaderGitStatusText } from "@/features/smith/right-sidebar-git-header-actions"
@@ -366,7 +367,7 @@ export const AppShellAgentHeader = React.memo(function AppShellAgentHeader({
               >
                 <span>Commands</span>
                 <DropdownMenuShortcut>
-                  {formatShortcutLabel(appShortcut("K"))}
+                  {formatShortcutLabel(commandPaletteShortcut)}
                 </DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem

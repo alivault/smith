@@ -56,6 +56,12 @@ export function rightSidebarPaneShortcut(pane: RightSidebarShortcutPane) {
   return appShortcut(`Shift+${rightSidebarPaneShortcutKeys[pane]}`)
 }
 
+/**
+ * The shortcut that the menus show for the command palette: Command+K on
+ * macOS, as in most Mac apps. Control+K also opens it there.
+ */
+export const commandPaletteShortcut = isMacPlatform ? "Meta+K" : "Alt+K"
+
 export function appShortcut(keys: string) {
   return `${appModifier}+${keys}`
 }

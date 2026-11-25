@@ -7,6 +7,7 @@ import type { ArchiveAgentsResult } from "@/features/smith/archive-agents"
 import {
   agentNumberModifierFlag,
   appModifierFlag,
+  isMacPlatform,
   conversationNavModifierFlag,
   matchesShortcutEvent,
   pullShortcut,
@@ -795,6 +796,22 @@ export function useAppShellShortcuts({
         },
       },
     })),
+    // On macOS, Command+K also opens the command palette, as in most Mac
+    // apps. Control+K (above) still works.
+    ...(isMacPlatform
+      ? [
+          {
+            hotkey: { key: "K", meta: true } as const,
+            callback: handleGlobalShortcut,
+            options: {
+              meta: {
+                name: "Open the command palette",
+                description: "Open the command palette with Command+K.",
+              },
+            },
+          },
+        ]
+      : []),
     {
       hotkey: pullShortcut,
       callback: handleGlobalShortcut,
