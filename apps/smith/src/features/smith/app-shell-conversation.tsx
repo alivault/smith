@@ -1,11 +1,11 @@
 import * as React from "react"
+import { StatusIcon } from "@/components/ai-elements/status-icon"
+import { TraceIcon } from "@/components/ui/trace"
 import {
   ArrowDownIcon,
   ArrowDownToLineIcon,
   ArrowUpIcon,
   ArrowUpToLineIcon,
-  CheckIcon,
-  OctagonXIcon,
 } from "lucide-react"
 
 import { SmithMark } from "@/components/smith-mark"
@@ -738,17 +738,21 @@ function AppShellMessagesWorkingIndicator({
     <div
       role="status"
       aria-live="polite"
-      className="flex w-full items-start gap-3 rounded-xl p-1 text-sm text-muted-foreground"
+      className="flex w-full items-start gap-2 text-sm text-muted-foreground"
     >
-      <span className="mt-0.5 inline-flex items-center justify-center">
-        {state.done ? (
-          <CheckIcon className="size-4 text-emerald-600" />
-        ) : state.error ? (
-          <OctagonXIcon className="size-4 text-destructive" />
-        ) : (
-          <Spinner />
+      {/* The same icon, size, and spacing as the lines of the agent's work
+          (Trace and its status icon), so the two line up. */}
+      <TraceIcon
+        className={cn(
+          "mt-0.5",
+          state.done && "text-emerald-600",
+          state.error && "text-destructive"
         )}
-      </span>
+      >
+        <StatusIcon
+          status={state.done ? undefined : state.error ? "error" : "running"}
+        />
+      </TraceIcon>
       <div className="min-w-0 flex-1">
         <div className="flex min-h-5 min-w-0 items-center justify-start gap-2">
           <div className="min-w-0 shrink-0">
