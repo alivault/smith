@@ -12,6 +12,9 @@ import {
   MessageSquareIcon,
   PencilIcon,
   SquareTerminalIcon,
+  InfoIcon,
+  EyeIcon,
+  AlarmClockIcon,
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react"
@@ -2325,6 +2328,14 @@ function noticeIcon(notice: AgentNotice): {
     notice.tone === "default" ? "text-success" : NOTICE_TONE_CLASS[notice.tone]
   if (notice.kind === "job")
     return { Icon: SquareTerminalIcon, className: color }
+  if (notice.kind === "reminder")
+    return { Icon: InfoIcon, className: NOTICE_TONE_CLASS.muted }
+  if (notice.kind === "timer") return { Icon: AlarmClockIcon, className: color }
+  if (notice.kind === "watch")
+    return {
+      Icon: notice.tone === "attention" ? TriangleAlertIcon : EyeIcon,
+      className: color,
+    }
   if (notice.state.startsWith("message"))
     return { Icon: MessageSquareIcon, className: "text-primary" }
   if (notice.tone === "attention")
@@ -2449,10 +2460,16 @@ function AgentNoticeBody({
           <PlainToolOutput text={notice.body} />
         ) : null}
         {notice.command ? (
-          <ToolBlockSection label="Command" text={notice.command} />
+          <ToolBlockSection
+            label={notice.kind === "watch" ? "Checked" : "Command"}
+            text={notice.command}
+          />
         ) : null}
         {notice.output !== undefined ? (
-          <ToolBlockSection label="Last output" text={notice.output} />
+          <ToolBlockSection
+            label={notice.kind === "watch" ? "Last check" : "Last output"}
+            text={notice.output}
+          />
         ) : null}
         {notice.hint ? (
           <p className="text-xs text-muted-foreground">{notice.hint}</p>

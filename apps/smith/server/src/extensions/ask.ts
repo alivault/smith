@@ -324,7 +324,7 @@ registerState({
 /** The start of the message that asks the agent to use `ask_user`. */
 export const PLAIN_QUESTION_MARKER = "[Plain-text question]"
 
-const PLAIN_QUESTION_NUDGE = [
+export const PLAIN_QUESTION_NUDGE = [
   `${PLAIN_QUESTION_MARKER} Your last message ends with a question to the user in plain text. The user cannot answer it with a click.`,
   "Ask it again with ask_user: put the most likely options first and your recommendation at the top. Do not repeat your report.",
   "If it was not a question for the user, reply with one short line and no question.",

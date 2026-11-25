@@ -3,6 +3,9 @@ import { test } from "node:test"
 
 import { stallMessage } from "../src/core/bash-calls.ts"
 import { reportMessage, STOPPED_ANSWER } from "../src/extensions/agents.ts"
+import { PLAIN_QUESTION_NUDGE } from "../src/extensions/ask.ts"
+import { timerMessage } from "../src/extensions/schedule.ts"
+import { watchMessage } from "../src/extensions/watch.ts"
 import {
   isLocalAgentId,
   parseAgentNotice,
@@ -141,4 +144,61 @@ void test("a normal prompt is not a notice", () => {
     assert.equal(parseAgentNotice(text), null, text)
   assert.equal(isLocalAgentId("s12"), true)
   assert.equal(isLocalAgentId("workbox:s12"), false)
+})
+
+void test("the client reads watches, timers, and the ask_user reminder as notices", () => {
+  const check = { kind: "url", url: "https://example.com/v", until: "status" }
+  const fired = parseAgentNotice(
+    watchMessage(
+      "w1",
+      { message: "It is on npm.\nRestart.", label: "npm", check } as never,
+      "met",
+      3,
+      "HTTP 200\n{}"
+    )
+  )
+  assert.equal(fired?.kind, "watch")
+  assert.equal(fired?.state, "fired")
+  assert.equal(fired?.summary, "It is on npm.")
+  assert.equal(fired?.body, "It is on npm.\nRestart.")
+  assert.equal(fired?.output, "HTTP 200\n{}")
+  assert.match(
+    fired?.command ?? "",
+    /^https:\/\/example\.com\/v until .*\(3 checks\)$/
+  )
+
+  const late = parseAgentNotice(
+    watchMessage(
+      "w2",
+      { message: "m", label: "CI", check } as never,
+      "timeout",
+      9,
+      ""
+    )
+  )
+  assert.equal(late?.state, "timed out")
+  assert.equal(late?.summary, "CI")
+
+  const timer = parseAgentNotice(
+    timerMessage(
+      "t1",
+      { message: "Check the deploy", label: "deploy", everyMs: 60_000 },
+      2
+    )
+  )
+  assert.equal(timer?.kind, "timer")
+  assert.equal(timer?.state, "run 2")
+  assert.equal(timer?.summary, "Check the deploy")
+  const once = parseAgentNotice(
+    timerMessage("t2", { message: "Look again", label: "Look again" }, 1)
+  )
+  assert.equal(once?.state, "fired")
+  assert.equal(once?.body, "Look again")
+
+  const reminder = parseAgentNotice(PLAIN_QUESTION_NUDGE)
+  assert.equal(reminder?.kind, "reminder")
+  assert.equal(reminder?.label, "Smith")
+
+  assert.equal(parseAgentNotice("[Watch] me do this"), null)
+  assert.equal(parseAgentNotice("[Timer] no id line"), null)
 })

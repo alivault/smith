@@ -6,7 +6,9 @@
  * The formats come from the server: `reportMessage` and the `agents send`
  * action (`server/src/extensions/agents.ts`), `stallMessage`
  * (`server/src/core/bash-calls.ts`), and the job notices
- * (`server/src/extensions/jobs.ts`). The parser is strict: only these exact
+ * (`server/src/extensions/jobs.ts`), the messages of watches and timers
+ * (`watchMessage`, `timerMessage`), and the reminder to ask with ask_user
+ * (`PLAIN_QUESTION_NUDGE`, `server/src/extensions/ask.ts`). The parser is strict: only these exact
  * headers match, so a normal prompt that starts with `[` stays a prompt.
  * `server/test/agent-notice.test.ts` checks it against the server text.
  *
@@ -17,8 +19,11 @@
 export type AgentNoticeTone = "default" | "attention" | "muted" | "error"
 
 export type AgentNotice = {
-  kind: "agent" | "job"
-  /** The first word of the summary: "Subagent", "Agent", or "Job". */
+  kind: "agent" | "job" | "watch" | "timer" | "reminder"
+  /**
+   * The first word of the summary: "Subagent", "Agent", "Job", "Watch",
+   * "Timer", or "Smith".
+   */
   label: string
   /** The agent that sent it, for example `s12` or `workbox:s12`. */
   agentId?: string
@@ -33,7 +38,7 @@ export type AgentNotice = {
   markdown: boolean
   /** The instruction line for the model, shown muted. */
   hint?: string
-  /** The command of a job. */
+  /** The command of a job, or what a watch checks. */
   command?: string
   /** The last output of a job, for a monospace block. */
   output?: string
@@ -50,7 +55,10 @@ export function parseAgentNotice(text: string): AgentNotice | null {
     parseAgentReport(text) ??
     parseAgentMessage(text) ??
     parseStall(text) ??
-    parseJobNotice(text)
+    parseJobNotice(text) ??
+    parseWatch(text) ??
+    parseTimer(text) ??
+    parseReminder(text)
   )
 }
 
@@ -240,4 +248,75 @@ function parseJobNotice(text: string): AgentNotice | null {
   }
 
   return null
+}
+
+const WATCH_LINE = /^\(watch (\S+): ([\s\S]*), (\d+) check\(s\)\)$/
+const WATCH_TIMEOUT_HEAD =
+  /^\[Watch timed out\] (.*): the condition did not come true\.$/
+
+/** `[Watch] message` or `[Watch timed out] label: …`, from `watchMessage`. */
+function parseWatch(text: string): AgentNotice | null {
+  if (!text.startsWith("[Watch")) return null
+  const marker = text.indexOf(")\nLast check:\n")
+  if (marker === -1) return null
+  const head = text.slice(0, marker + 1)
+  const lineStart = head.lastIndexOf("\n(watch ")
+  if (lineStart === -1) return null
+  const first = head.slice(0, lineStart)
+  const line = WATCH_LINE.exec(head.slice(lineStart + 1))
+  if (!line) return null
+  const output = text.slice(marker + ")\nLast check:\n".length)
+  const timeout = WATCH_TIMEOUT_HEAD.exec(first)
+  if (!timeout && !first.startsWith("[Watch] ")) return null
+  return {
+    kind: "watch",
+    label: "Watch",
+    state: timeout ? "timed out" : "fired",
+    tone: timeout ? "attention" : "default",
+    summary: timeout
+      ? timeout[1]
+      : splitFirstLine(first.slice("[Watch] ".length)).first.trim(),
+    body: timeout ? "" : first.slice("[Watch] ".length),
+    markdown: true,
+    command: `${line[2]} (${line[3]} checks)`,
+    output,
+  }
+}
+
+const TIMER_HEAD = /^\[Timer(?:, run (\d+))?\] /
+const TIMER_LINE = /\n\(timer (\S+)(?:: [^\n]*)?\)$/
+
+/** `[Timer] message` or `[Timer, run 3] message`, from `timerMessage`. */
+function parseTimer(text: string): AgentNotice | null {
+  const head = TIMER_HEAD.exec(text)
+  const line = TIMER_LINE.exec(text)
+  if (!head || !line) return null
+  const body = text.slice(head[0].length, line.index)
+  return {
+    kind: "timer",
+    label: "Timer",
+    state: head[1] ? `run ${head[1]}` : "fired",
+    tone: "default",
+    summary: splitFirstLine(body).first.trim(),
+    body,
+    markdown: true,
+    hint: line[0].slice(1),
+  }
+}
+
+const REMINDER_HEAD =
+  "[Plain-text question] Your last message ends with a question to the user in plain text."
+
+/** Smith asks the agent to ask with ask_user (`PLAIN_QUESTION_NUDGE`). */
+function parseReminder(text: string): AgentNotice | null {
+  if (!text.startsWith(REMINDER_HEAD)) return null
+  return {
+    kind: "reminder",
+    label: "Smith",
+    state: "reminder",
+    tone: "muted",
+    summary: "Ask the question with ask_user",
+    body: text.slice("[Plain-text question] ".length),
+    markdown: false,
+  }
 }

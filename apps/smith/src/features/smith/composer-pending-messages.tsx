@@ -30,6 +30,9 @@ import {
   PlayIcon,
   PlusIcon,
   SquareTerminalIcon,
+  EyeIcon,
+  AlarmClockIcon,
+  InfoIcon,
   Trash2Icon,
   Undo2Icon,
 } from "lucide-react"
@@ -193,7 +196,13 @@ const LANE_DROP_PREFIX = "queue-lane:"
 function QueueRowSummary({ row }: { row: QueueEditRow }) {
   const notice = row.images.length === 0 ? parseAgentNotice(row.text) : null
   if (notice) {
-    const Icon = notice.kind === "job" ? SquareTerminalIcon : BotIcon
+    const Icon = {
+      job: SquareTerminalIcon,
+      agent: BotIcon,
+      watch: EyeIcon,
+      timer: AlarmClockIcon,
+      reminder: InfoIcon,
+    }[notice.kind]
     return (
       <div
         title={row.text}
