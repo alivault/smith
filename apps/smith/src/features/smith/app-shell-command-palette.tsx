@@ -88,11 +88,13 @@ function AppShellCommandPalette({
   }
   const commandGroups = Array.from(groups.entries())
 
-  React.useEffect(() => {
-    if (!open && query) {
-      setQuery("")
-    }
-  }, [open, query])
+  // Clear the search when the palette opens, not when it closes: the list
+  // must not change while the palette fades out.
+  const [wasOpen, setWasOpen] = React.useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open && query) setQuery("")
+  }
 
   const handleSelect = (command: AppCommand) => {
     if (command.toggled !== undefined) {
@@ -253,7 +255,9 @@ export function AppShellCommandPaletteController({
     <AppShellCommandPalette
       open={open}
       onOpenChange={setOpenState}
-      commands={open ? openedCommands : []}
+      // Keep the commands while the palette fades out, so it does not flash
+      // "No commands found".
+      commands={openedCommands}
       onCommandsStale={() => {
         if (openRef.current) setOpenedCommands(readCommands())
       }}
