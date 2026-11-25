@@ -3,7 +3,6 @@ import { test } from "node:test"
 
 import { stallMessage } from "../src/core/bash-calls.ts"
 import { reportMessage, STOPPED_ANSWER } from "../src/extensions/agents.ts"
-import { PLAIN_QUESTION_NUDGE } from "../src/extensions/ask.ts"
 import { timerMessage } from "../src/extensions/schedule.ts"
 import { watchMessage } from "../src/extensions/watch.ts"
 import {
@@ -195,7 +194,9 @@ void test("the client reads watches, timers, and the ask_user reminder as notice
   assert.equal(once?.state, "fired")
   assert.equal(once?.body, "Look again")
 
-  const reminder = parseAgentNotice(PLAIN_QUESTION_NUDGE)
+  const reminder = parseAgentNotice(
+    "[Plain-text question] Your last message ends with a question to the user in plain text. The user cannot answer it with a click.\nAsk it again with ask_user."
+  )
   assert.equal(reminder?.kind, "reminder")
   assert.equal(reminder?.label, "Smith")
 

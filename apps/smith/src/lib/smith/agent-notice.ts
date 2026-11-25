@@ -8,7 +8,7 @@
  * (`server/src/core/bash-calls.ts`), and the job notices
  * (`server/src/extensions/jobs.ts`), the messages of watches and timers
  * (`watchMessage`, `timerMessage`), and the reminder to ask with ask_user
- * (`PLAIN_QUESTION_NUDGE`, `server/src/extensions/ask.ts`). The parser is strict: only these exact
+ * that older versions sent. The parser is strict: only these exact
  * headers match, so a normal prompt that starts with `[` stays a prompt.
  * `server/test/agent-notice.test.ts` checks it against the server text.
  *
@@ -307,7 +307,10 @@ function parseTimer(text: string): AgentNotice | null {
 const REMINDER_HEAD =
   "[Plain-text question] Your last message ends with a question to the user in plain text."
 
-/** Smith asks the agent to ask with ask_user (`PLAIN_QUESTION_NUDGE`). */
+/**
+ * Smith asked the agent to ask with ask_user. Smith no longer sends it, but
+ * older conversations have it.
+ */
 function parseReminder(text: string): AgentNotice | null {
   if (!text.startsWith(REMINDER_HEAD)) return null
   return {
