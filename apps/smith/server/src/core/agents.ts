@@ -2064,22 +2064,26 @@ export class Agents implements HostAgents {
       resources.prompts
     )
     const busy = this.isBusy(id)
-    // A steer answers an open question; it still reaches the model as a steer.
-    // A follow-up waits for the turn to end, so it does not answer the question.
+    // A steer answers an open question, with its images. The answer reaches
+    // the model as the result of ask_user, so it is not sent again as a
+    // message. A follow-up waits for the turn to end, so it does not answer
+    // the question.
     if (
       busy &&
       input.streamingBehavior !== "followUp" &&
       this.#needsInput.has(id) &&
       expanded.trim()
     ) {
-      await answerQuestion(
+      const answered = await answerQuestion(
         this.#harness,
         conversationIdOf(id),
         undefined,
         expanded.trim(),
         "chat",
-        ctx
+        ctx,
+        await promptImages(input.images)
       )
+      if (answered) return { queued: false, pendingId: undefined }
     }
     // An idle agent has no tool that waits for an answer: the open
     // questions are left over, so the new prompt closes them.
