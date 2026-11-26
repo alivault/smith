@@ -18,6 +18,11 @@ import {
   VERSION,
 } from "./config.ts"
 import type { Auth, UiRequests } from "./core/auth.ts"
+import {
+  applyToolUpdates,
+  type ConversationItem,
+  type ToolUpdateOperation,
+} from "./core/items.ts"
 import { PromptTokenCounter } from "./core/prompt-tokens.ts"
 import { scopeText } from "./core/system-prompt.ts"
 import type { Runtime } from "./core/runtime.ts"
@@ -3046,7 +3051,24 @@ function streamEvents(
       previousItems = items
       return
     }
-    if (payload.type === "conversation_delta") itemsChangedByDelta = true
+    if (payload.type === "conversation_delta") {
+      // Tool output updates change committed items in place: keep the copy
+      // of the client's items, so the next state can still be a patch.
+      const operations = Array.isArray(payload.operations)
+        ? (payload.operations as { op?: unknown }[])
+        : []
+      if (
+        operations.length > 0 &&
+        operations.every((operation) => operation.op === "updateTool")
+      ) {
+        previousItems = applyToolUpdates(
+          previousItems as ConversationItem[],
+          operations as ToolUpdateOperation[]
+        )
+      } else {
+        itemsChangedByDelta = true
+      }
+    }
     stream.send(payload, event.sequence)
   }
 

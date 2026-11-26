@@ -93,10 +93,13 @@ import {
   itemsFromEntries,
   messageImages,
   messageText,
+  runningToolCalls,
   streamingDelta,
   streamingItem,
   type AssistantItem,
   type ConversationItem,
+  type DeltaOperation,
+  type ToolUpdateOperation,
   type ModelOption,
   type UsageLike,
 } from "./items.ts"
@@ -1381,18 +1384,31 @@ export class Agents implements HostAgents {
       compacting !== wasCompacting
     const toolsChanged = changes.live && this.#toolsSignature(id, docs.live)
     if (structural || toolsChanged) {
+      this.#rememberToolOutputs(id, docs.live)
       await this.publishState(id)
       return
     }
     if (changes.live) {
-      const next = streamingItem(docs.live)
-      const previous = this.#streaming.get(id)
-      if (!next) {
-        if (previous) await this.publishState(id)
+      const toolOperations = this.#toolUpdates(id, docs.live)
+      if (!toolOperations) {
+        // A tool the client does not show as running: send all of it.
+        this.#rememberToolOutputs(id, docs.live)
+        await this.publishState(id)
         return
       }
-      const operations = streamingDelta(previous, next)
-      this.#streaming.set(id, next)
+      const next = streamingItem(docs.live)
+      const previous = this.#streaming.get(id)
+      if (!next && previous) {
+        this.#rememberToolOutputs(id, docs.live)
+        await this.publishState(id)
+        return
+      }
+      const operations: DeltaOperation[] = next
+        ? streamingDelta(previous, next)
+        : []
+      if (next) this.#streaming.set(id, next)
+      operations.push(...toolOperations)
+      this.#rememberToolOutputs(id, docs.live)
       if (operations.length === 0) return
       this.#hub.push(
         { type: "conversation_delta", agentId: id, operations },
@@ -1403,13 +1419,15 @@ export class Agents implements HostAgents {
 
   readonly #toolSignatures = new Map<string, string>()
 
-  /** Whether the running output of the current tool round changed. */
+  /**
+   * Whether the tool round changed other than in running output: a slot came
+   * or went, or its status, result entry, or details presence changed.
+   */
   #toolsSignature(id: string, live: LiveState | undefined) {
     const signature = JSON.stringify(
       (live?.tools ?? []).map((slot) => [
         slot.callId,
         slot.status,
-        slot.output?.length ?? 0,
         slot.details === undefined ? 0 : 1,
         slot.entry ?? 0,
       ])
@@ -1417,6 +1435,78 @@ export class Agents implements HostAgents {
     const changed = this.#toolSignatures.get(id) !== signature
     this.#toolSignatures.set(id, signature)
     return changed
+  }
+
+  /** The running output and details of each tool slot, as last sent to clients. */
+  readonly #toolOutputs = new Map<
+    string,
+    Map<string, { output: string; details: string | undefined }>
+  >()
+
+  #rememberToolOutputs(id: string, live: LiveState | undefined) {
+    const slots = live?.tools ?? []
+    if (slots.length === 0) {
+      this.#toolOutputs.delete(id)
+      return
+    }
+    this.#toolOutputs.set(
+      id,
+      new Map(
+        slots.map((slot) => [
+          slot.callId,
+          {
+            output: slot.output ?? "",
+            details:
+              slot.details === undefined
+                ? undefined
+                : JSON.stringify(slot.details),
+          },
+        ])
+      )
+    )
+  }
+
+  /**
+   * `updateTool` operations for the slots whose running output or details
+   * changed since the last send, or undefined when one of them is not a
+   * running tool block in the items: then only a full state is right.
+   */
+  #toolUpdates(
+    id: string,
+    live: LiveState | undefined
+  ): ToolUpdateOperation[] | undefined {
+    const slots = live?.tools ?? []
+    if (slots.length === 0) return []
+    const sent = this.#toolOutputs.get(id)
+    const changed = slots.filter((slot) => {
+      const before = sent?.get(slot.callId)
+      const details =
+        slot.details === undefined ? undefined : JSON.stringify(slot.details)
+      return (
+        !before ||
+        before.output !== (slot.output ?? "") ||
+        before.details !== details
+      )
+    })
+    if (changed.length === 0) return []
+    const items = this.#transcripts.get(id)?.items
+    if (!items) return undefined
+    const running = runningToolCalls(items)
+    if (changed.some((slot) => !running.has(slot.callId))) return undefined
+    return changed.map((slot) => {
+      const before = sent?.get(slot.callId)
+      const details =
+        slot.details === undefined ? undefined : JSON.stringify(slot.details)
+      return {
+        op: "updateTool",
+        callId: slot.callId,
+        output: slot.output ?? "",
+        ...(slot.details !== undefined && before?.details !== details
+          ? { details: slot.details }
+          : {}),
+        running: true,
+      }
+    })
   }
 
   async #finished(id: string, reason: "agent" | "manual_compaction") {
