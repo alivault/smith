@@ -29,9 +29,11 @@ import {
 } from "@/features/smith/app-shell-common"
 import type { AppShellDisplaySettingsState } from "@/features/smith/app-shell-types"
 import {
+  AWAITING_FIRST_RESPONSE_WORKING_LABEL,
   COMPACT_WORKING_LABEL,
   type AppShellWorkingState,
 } from "@/features/smith/app-shell-working-state"
+import { conversationShowsActivity } from "@/features/smith/conversation-activity"
 import { DraftGitStatusBadge } from "@/features/smith/right-sidebar-git-header-actions"
 import {
   conversationNavShortcut,
@@ -1225,21 +1227,24 @@ function AppShellConversationWorkingFooter({
   workingStateStore: SmithStore<AppShellWorkingState | null>
 }) {
   const hasMessages = useConversationHasMessages(conversationItemsStore)
-  const hasAssistantOutput = useConversationHasAssistantOutput(
-    conversationItemsStore
+  const showsActivity = React.useSyncExternalStore(
+    conversationItemsStore.subscribe,
+    () => conversationShowsActivity(conversationItemsStore.getSnapshot().items),
+    () => conversationShowsActivity(conversationItemsStore.getSnapshot().items)
   )
   const conversationMessageColumnClassName = centerMessages
     ? "mx-auto w-full max-w-[80ch]"
     : "w-full"
   const workingState = useSelector(workingStateStore)
+  // The plain "Working…" line shows only in the gaps, when nothing else in
+  // the conversation moves. Compaction, status text, and errors always show.
+  const plainWorking =
+    !workingState?.error &&
+    !workingState?.cancelable &&
+    (workingState?.label === "Working…" ||
+      workingState?.label === AWAITING_FIRST_RESPONSE_WORKING_LABEL)
   const displayedWorkingState =
-    workingState ||
-    (hasAssistantOutput
-      ? {
-          label: "Done",
-          done: true,
-        }
-      : null)
+    workingState && !(plainWorking && showsActivity) ? workingState : null
 
   if (!hasMessages || !displayedWorkingState) return null
 
