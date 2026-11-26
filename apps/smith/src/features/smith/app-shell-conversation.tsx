@@ -1243,8 +1243,14 @@ function AppShellConversationWorkingFooter({
     !workingState?.cancelable &&
     (workingState?.label === "Working…" ||
       workingState?.label === AWAITING_FIRST_RESPONSE_WORKING_LABEL)
+  // A gap shows the line only after it lasts a moment, so a short gap
+  // between two steps does not make it flash.
+  const plainGap = useTrueAfter(
+    Boolean(workingState) && plainWorking && !showsActivity,
+    WORKING_GAP_DELAY_MS
+  )
   const displayedWorkingState =
-    workingState && !(plainWorking && showsActivity) ? workingState : null
+    workingState && (!plainWorking || plainGap) ? workingState : null
 
   if (!hasMessages || !displayedWorkingState) return null
 
@@ -1256,6 +1262,22 @@ function AppShellConversationWorkingFooter({
       />
     </div>
   )
+}
+
+const WORKING_GAP_DELAY_MS = 300
+
+/** `value`, but it turns true only after it was true for `delayMs`. */
+function useTrueAfter(value: boolean, delayMs: number) {
+  const [settled, setSettled] = React.useState(false)
+  React.useEffect(() => {
+    if (!value) {
+      setSettled(false)
+      return
+    }
+    const timer = window.setTimeout(() => setSettled(true), delayMs)
+    return () => window.clearTimeout(timer)
+  }, [value, delayMs])
+  return value && settled
 }
 
 function AppShellConversationMessageStack({
