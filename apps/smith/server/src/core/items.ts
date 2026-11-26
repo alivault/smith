@@ -521,6 +521,62 @@ export type DeltaOperation =
       delta: string
     }
   | { op: "replaceBlock"; contentIndex: number; block: AssistantBlock }
+  | ToolUpdateOperation
+
+/** New running output or details of a tool block, found by its call ID in any item. */
+export type ToolUpdateOperation = {
+  op: "updateTool"
+  callId: string
+  output?: string
+  details?: unknown
+  running: boolean
+}
+
+/** The call IDs of the tool blocks that still run in the items. */
+export function runningToolCalls(items: readonly ConversationItem[]) {
+  const calls = new Set<string>()
+  for (const item of items) {
+    if (item.kind !== "assistant") continue
+    for (const block of item.blocks) {
+      if (block.type === "tool" && block.running && block.callId)
+        calls.add(block.callId)
+    }
+  }
+  return calls
+}
+
+/**
+ * Apply `updateTool` operations to the items as the web client does, so a
+ * stream can keep its copy of the client's items. Items and blocks that do not
+ * change keep their identity.
+ */
+export function applyToolUpdates<T extends ConversationItem>(
+  items: readonly T[],
+  operations: readonly ToolUpdateOperation[]
+): T[] {
+  const next = [...items]
+  for (const operation of operations) {
+    for (let index = next.length - 1; index >= 0; index -= 1) {
+      const item = next[index]
+      if (item?.kind !== "assistant") continue
+      const blockIndex = item.blocks.findIndex(
+        (block) => block.type === "tool" && block.callId === operation.callId
+      )
+      const block = item.blocks[blockIndex]
+      if (block?.type !== "tool") continue
+      const blocks = [...item.blocks]
+      blocks[blockIndex] = {
+        ...block,
+        ...(operation.output !== undefined ? { output: operation.output } : {}),
+        ...("details" in operation ? { details: operation.details } : {}),
+        running: operation.running,
+      }
+      next[index] = { ...item, blocks }
+      break
+    }
+  }
+  return next
+}
 
 /**
  * Operations that turn the client's streaming item `previous` into `next`:

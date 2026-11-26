@@ -2,6 +2,7 @@ import type {
   AssistantBlock,
   AssistantItem,
   ConversationDeltaEvent,
+  ConversationDeltaOperation,
   ConversationImage,
   ConversationItem,
   PromptImage,
@@ -535,8 +536,34 @@ export function applyConversationDelta(
           streaming: true,
           done: false,
         } satisfies AssistantItem)
+  // Tool output updates can target a committed item: the tool round runs
+  // after its answer is committed. Only touch the streaming item (or make
+  // one) for an operation that is for it.
+  let streamingTouched = false
+  const nextItems = [...previousItems]
 
   for (const operation of event.operations) {
+    if (operation.op === "updateTool") {
+      if (streamingIndex >= 0 || streamingTouched) {
+        const blocks = updateToolBlock(assistant.blocks, operation)
+        if (blocks) {
+          assistant = { ...assistant, blocks }
+          streamingTouched = true
+          continue
+        }
+      }
+      for (let index = nextItems.length - 1; index >= 0; index -= 1) {
+        const item = nextItems[index]
+        if (index === streamingIndex || item?.kind !== "assistant") continue
+        const blocks = updateToolBlock(item.blocks, operation)
+        if (!blocks) continue
+        nextItems[index] = { ...item, blocks }
+        break
+      }
+      continue
+    }
+
+    streamingTouched = true
     if (operation.op === "replaceItem") {
       assistant = operation.item
       continue
@@ -595,44 +622,55 @@ export function applyConversationDelta(
         )
       }
       assistant = { ...assistant, blocks }
-      continue
     }
-
-    const blockIndex = assistant.blocks.findIndex(
-      (block) => block.type === "tool" && block.callId === operation.callId
-    )
-    const block = assistant.blocks[blockIndex]
-    if (blockIndex < 0 || block?.type !== "tool") continue
-    const blocks = [...assistant.blocks]
-    blocks[blockIndex] = {
-      ...block,
-      ...(typeof operation.output === "string"
-        ? { output: operation.output }
-        : {}),
-      ...(Object.prototype.hasOwnProperty.call(operation, "details")
-        ? { details: operation.details }
-        : {}),
-      ...(typeof operation.isError === "boolean"
-        ? { isError: operation.isError }
-        : {}),
-      running: operation.running,
-    }
-    assistant = { ...assistant, blocks }
   }
 
-  const nextItems = [...previousItems]
-  const nextAssistant = {
-    ...assistant,
-    renderKey,
-    streaming: true,
-    done: false,
-  } satisfies AssistantItem
-  if (streamingIndex >= 0) {
-    nextItems[streamingIndex] = nextAssistant
-  } else {
-    nextItems.push(nextAssistant)
+  if (streamingTouched) {
+    const nextAssistant = {
+      ...assistant,
+      renderKey,
+      streaming: true,
+      done: false,
+    } satisfies AssistantItem
+    if (streamingIndex >= 0) {
+      nextItems[streamingIndex] = nextAssistant
+    } else {
+      nextItems.push(nextAssistant)
+    }
   }
   return reconcileConversationItems(previousItems, nextItems)
+}
+
+type UpdateToolOperation = Extract<
+  ConversationDeltaOperation,
+  { op: "updateTool" }
+>
+
+/** The blocks with the tool call of `operation` updated, or undefined when they do not have it. */
+function updateToolBlock(
+  blocks: Array<AssistantBlock>,
+  operation: UpdateToolOperation
+) {
+  const blockIndex = blocks.findIndex(
+    (block) => block.type === "tool" && block.callId === operation.callId
+  )
+  const block = blocks[blockIndex]
+  if (blockIndex < 0 || block?.type !== "tool") return undefined
+  const next = [...blocks]
+  next[blockIndex] = {
+    ...block,
+    ...(typeof operation.output === "string"
+      ? { output: operation.output }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(operation, "details")
+      ? { details: operation.details }
+      : {}),
+    ...(typeof operation.isError === "boolean"
+      ? { isError: operation.isError }
+      : {}),
+    running: operation.running,
+  }
+  return next
 }
 
 function assistantStopMessage(message: SyncMessage | undefined) {
