@@ -1,13 +1,19 @@
 import * as React from "react"
 
-import type { ConversationItem } from "@/lib/smith"
+import type { AssistantItem, ConversationItem } from "@/lib/smith"
 import {
   assistantMessageHasFooterMeta,
   assistantMessageHasVisibleBlocks,
   type AssistantMessagesSnapshot,
   type AssistantMessagesStore,
 } from "@/features/smith/conversation-view"
-import { sameStringArray } from "@/features/smith/app-shell-common"
+import {
+  conversationItemKey,
+  sameConversationItemParts,
+  segmentConversationItems,
+  sliceAssistantItem,
+  type ConversationItemPart,
+} from "@/features/smith/conversation-segments"
 
 export type RenderConversationGroupDescriptor =
   | {
@@ -18,7 +24,18 @@ export type RenderConversationGroupDescriptor =
   | {
       kind: "assistant"
       key: string
-      itemKeys: Array<string>
+      /**
+       * The row shows nothing, but stays in the list because an answered
+       * question follows it (see `conversation-segments.ts`).
+       */
+      hidden?: boolean
+    }
+  | {
+      // An answered question is a turn of the user: its own row, which the
+      // scroller anchors to the top like a user message.
+      kind: "question"
+      key: string
+      hidden: boolean
     }
   | {
       // A compaction summary is a turn boundary, so it gets its own row that
@@ -29,82 +46,71 @@ export type RenderConversationGroupDescriptor =
       pending: boolean
     }
 
-function conversationItemKey(item: ConversationItem, index: number) {
-  return item.renderKey || item.itemKey || `message-row:${index}`
+function partItems(
+  parts: Array<ConversationItemPart>,
+  getItem: (key: string) => ConversationItem | undefined
+) {
+  return parts.flatMap((part) => {
+    const item = getItem(part.itemKey)
+    return item?.kind === "assistant" ? [sliceAssistantItem(item, part)] : []
+  })
 }
 
-function isCompactionItem(item: ConversationItem) {
-  return (
-    item.kind === "assistant" &&
-    item.blocks.some((block) => block.type === "compaction")
-  )
-}
-
-function groupConversationItemsForRender(options: {
+export function groupConversationItemsForRender(options: {
   items: Array<ConversationItem>
+  /** The items by key, when the caller has them. */
+  itemByKey?: Map<string, ConversationItem>
   hideFooter: boolean
   hideThinking: boolean
   hideToolBlocks: boolean
 }) {
   const groups: Array<RenderConversationGroupDescriptor> = []
-  let pendingAssistantGroup: Extract<
-    RenderConversationGroupDescriptor,
-    { kind: "assistant" }
-  > | null = null
-  let pendingAssistantVisible = false
+  const segments = segmentConversationItems(options.items)
+  if (segments.length === 0) return groups
 
-  const flushAssistantGroup = () => {
-    if (!pendingAssistantGroup) {
-      pendingAssistantVisible = false
-      return
+  const itemByKey = options.itemByKey ?? buildConversationItemMap(options.items)
+  const getItem = (key: string) => itemByKey.get(key)
+  const hasVisibleBlocks = (item: AssistantItem) =>
+    assistantMessageHasVisibleBlocks({
+      item,
+      hideThinking: options.hideThinking,
+      hideToolBlocks: options.hideToolBlocks,
+    })
+
+  for (const segment of segments) {
+    if (segment.kind === "user") {
+      groups.push(segment)
+      continue
     }
 
-    if (pendingAssistantVisible) {
-      groups.push(pendingAssistantGroup)
+    if (segment.kind === "compaction") {
+      groups.push({ kind: "compaction", key: segment.key, pending: false })
+      continue
     }
 
-    pendingAssistantGroup = null
-    pendingAssistantVisible = false
+    const items = partItems(segment.parts, getItem)
+
+    if (segment.kind === "question") {
+      groups.push({
+        kind: "question",
+        key: segment.key,
+        hidden: !items.some(hasVisibleBlocks),
+      })
+      continue
+    }
+
+    const visible = items.some(
+      (item) =>
+        (!options.hideFooter && assistantMessageHasFooterMeta(item)) ||
+        hasVisibleBlocks(item)
+    )
+    if (visible) {
+      groups.push({ kind: "assistant", key: segment.key })
+    } else if (segment.beforeQuestion) {
+      groups.push({ kind: "assistant", key: segment.key, hidden: true })
+    }
   }
 
-  options.items.forEach((item, index) => {
-    const key = conversationItemKey(item, index)
-
-    if (isCompactionItem(item)) {
-      flushAssistantGroup()
-      groups.push({ kind: "compaction", key, pending: false })
-      return
-    }
-
-    if (item.kind === "assistant") {
-      if (!pendingAssistantGroup) {
-        pendingAssistantGroup = {
-          kind: "assistant",
-          key,
-          itemKeys: [],
-        }
-      }
-
-      pendingAssistantGroup.itemKeys.push(key)
-      pendingAssistantVisible ||=
-        (!options.hideFooter && assistantMessageHasFooterMeta(item)) ||
-        assistantMessageHasVisibleBlocks({
-          item,
-          hideThinking: options.hideThinking,
-          hideToolBlocks: options.hideToolBlocks,
-        })
-      return
-    }
-
-    flushAssistantGroup()
-    groups.push({
-      kind: "user",
-      key,
-      itemKey: key,
-    })
-  })
-
-  flushAssistantGroup()
   return groups
 }
 
@@ -122,7 +128,15 @@ function sameRenderConversationGroupDescriptor(
     return left.pending === right.pending
   }
 
-  return left.kind === "assistant" && right.kind === "assistant"
+  if (left.kind === "question" && right.kind === "question") {
+    return left.hidden === right.hidden
+  }
+
+  return (
+    left.kind === "assistant" &&
+    right.kind === "assistant" &&
+    Boolean(left.hidden) === Boolean(right.hidden)
+  )
 }
 
 function reconcileRenderConversationGroupDescriptors(
@@ -167,15 +181,18 @@ type ConversationGroupSubscription = {
   listener: () => void
 }
 
-type ConversationAssistantGroupItemsSubscription = {
+type ConversationGroupPartsSubscription = {
   groupKey: string
-  itemKeys: Array<string>
+  parts: Array<ConversationItemPart>
   listener: () => void
 }
 
+const EMPTY_PARTS: Array<ConversationItemPart> = []
+
 export type ConversationItemsStore = {
   getSnapshot: () => ConversationItemsSnapshot
-  getAssistantGroupItemKeys: (groupKey: string) => Array<string>
+  /** The item blocks that an assistant, question, or compaction row shows. */
+  getGroupParts: (groupKey: string) => Array<ConversationItemPart>
   getItem: (key: string) => ConversationItem | undefined
   setItems: (items: Array<ConversationItem>) => void
   subscribe: (listener: () => void) => () => void
@@ -186,10 +203,7 @@ export type ConversationItemsStore = {
     groups: Array<RenderConversationGroupDescriptor>
     listener: () => void
   }) => () => void
-  subscribeAssistantGroupItems: (
-    groupKey: string,
-    listener: () => void
-  ) => () => void
+  subscribeGroupParts: (groupKey: string, listener: () => void) => () => void
   subscribeItems: (keys: Array<string>, listener: () => void) => () => void
 }
 
@@ -212,9 +226,9 @@ export function createConversationItemsStore(
   const listeners = new Set<() => void>()
   const itemListeners = new Map<string, Set<() => void>>()
   const groupSubscriptions = new Set<ConversationGroupSubscription>()
-  const assistantGroupItemsSubscriptions =
-    new Set<ConversationAssistantGroupItemsSubscription>()
-  const assistantGroupItemKeysByGroup = new Map<string, Array<string>>()
+  const groupPartsSubscriptions = new Set<ConversationGroupPartsSubscription>()
+  let partsRevision = -1
+  let partsByGroup = new Map<string, Array<ConversationItemPart>>()
 
   const notifyItemListeners = (key: string) => {
     const listenersForItem = itemListeners.get(key)
@@ -223,37 +237,30 @@ export function createConversationItemsStore(
     for (const listener of listenersForItem) listener()
   }
 
-  const computeAssistantGroupItemKeys = (groupKey: string) => {
-    const itemKeys: Array<string> = []
-    const startIndex = snapshot.items.findIndex(
-      (item, index) => conversationItemKey(item, index) === groupKey
-    )
-    if (startIndex < 0) return itemKeys
-
-    const startItem = snapshot.items[startIndex]
-    if (startItem && isCompactionItem(startItem)) return [groupKey]
-
-    for (let index = startIndex; index < snapshot.items.length; index += 1) {
-      const item = snapshot.items[index]
-      if (!item || item.kind !== "assistant" || isCompactionItem(item)) break
-      itemKeys.push(conversationItemKey(item, index))
+  // The parts of each row, again after each change of the items. A row
+  // keeps its parts array while its parts stay the same.
+  const getGroupParts = (groupKey: string) => {
+    if (partsRevision !== snapshot.revision) {
+      const nextPartsByGroup = new Map<string, Array<ConversationItemPart>>()
+      for (const segment of segmentConversationItems(snapshot.items)) {
+        if (segment.kind === "user") continue
+        const previous = partsByGroup.get(segment.key)
+        nextPartsByGroup.set(
+          segment.key,
+          previous && sameConversationItemParts(previous, segment.parts)
+            ? previous
+            : segment.parts
+        )
+      }
+      partsByGroup = nextPartsByGroup
+      partsRevision = snapshot.revision
     }
-
-    return itemKeys
-  }
-
-  const getAssistantGroupItemKeys = (groupKey: string) => {
-    const cached = assistantGroupItemKeysByGroup.get(groupKey)
-    const nextItemKeys = computeAssistantGroupItemKeys(groupKey)
-    if (cached && sameStringArray(cached, nextItemKeys)) return cached
-
-    assistantGroupItemKeysByGroup.set(groupKey, nextItemKeys)
-    return nextItemKeys
+    return partsByGroup.get(groupKey) ?? EMPTY_PARTS
   }
 
   return {
     getSnapshot: () => snapshot,
-    getAssistantGroupItemKeys,
+    getGroupParts,
     getItem: (key) => snapshot.itemByKey.get(key),
     setItems: (items) => {
       if (snapshot.items === items) return
@@ -281,6 +288,7 @@ export function createConversationItemsStore(
       for (const subscription of groupSubscriptions) {
         const nextGroups = groupConversationItemsForRender({
           items,
+          itemByKey: nextItemByKey,
           hideFooter: subscription.hideFooter,
           hideThinking: subscription.hideThinking,
           hideToolBlocks: subscription.hideToolBlocks,
@@ -296,11 +304,11 @@ export function createConversationItemsStore(
         }
       }
 
-      for (const subscription of assistantGroupItemsSubscriptions) {
-        const nextItemKeys = getAssistantGroupItemKeys(subscription.groupKey)
-        if (sameStringArray(subscription.itemKeys, nextItemKeys)) continue
+      for (const subscription of groupPartsSubscriptions) {
+        const nextParts = getGroupParts(subscription.groupKey)
+        if (subscription.parts === nextParts) continue
 
-        subscription.itemKeys = nextItemKeys
+        subscription.parts = nextParts
         subscription.listener()
       }
 
@@ -332,15 +340,15 @@ export function createConversationItemsStore(
         groupSubscriptions.delete(subscription)
       }
     },
-    subscribeAssistantGroupItems: (groupKey, listener) => {
-      const subscription: ConversationAssistantGroupItemsSubscription = {
+    subscribeGroupParts: (groupKey, listener) => {
+      const subscription: ConversationGroupPartsSubscription = {
         groupKey,
-        itemKeys: getAssistantGroupItemKeys(groupKey),
+        parts: getGroupParts(groupKey),
         listener,
       }
-      assistantGroupItemsSubscriptions.add(subscription)
+      groupPartsSubscriptions.add(subscription)
       return () => {
-        assistantGroupItemsSubscriptions.delete(subscription)
+        groupPartsSubscriptions.delete(subscription)
       }
     },
     subscribeItems: (keys, listener) => {
@@ -443,6 +451,7 @@ export function useConversationGroupDescriptors({
 
     const nextGroups = groupConversationItemsForRender({
       items: snapshot.items,
+      itemByKey: snapshot.itemByKey,
       hideFooter,
       hideThinking,
       hideToolBlocks,
@@ -570,16 +579,13 @@ export function useConversationItem(
 export function assistantMessagesSnapshotFromStore(options: {
   hideThinking: boolean
   hideToolBlocks: boolean
-  itemKeys: Array<string>
+  parts: Array<ConversationItemPart>
   store: ConversationItemsStore
 }): AssistantMessagesSnapshot {
   return {
     hideThinking: options.hideThinking,
     hideToolBlocks: options.hideToolBlocks,
-    items: options.itemKeys.flatMap((key) => {
-      const item = options.store.getItem(key)
-      return item?.kind === "assistant" ? [item] : []
-    }),
+    items: partItems(options.parts, options.store.getItem),
   }
 }
 

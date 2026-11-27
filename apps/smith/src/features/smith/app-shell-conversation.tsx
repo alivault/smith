@@ -866,6 +866,21 @@ function ConversationGroupView({
     )
   }
 
+  if (group.kind === "question") {
+    return (
+      <ConversationQuestionGroupRow
+        className={className}
+        groupKey={group.key}
+        hidden={group.hidden}
+        hideThinking={hideThinking}
+        hideToolBlocks={hideToolBlocks}
+        messageId={messageId}
+        store={store}
+        workingFooter={workingFooter}
+      />
+    )
+  }
+
   if (group.kind === "user") {
     return (
       <ConversationUserGroupRow
@@ -881,7 +896,12 @@ function ConversationGroupView({
   return (
     <ConversationRow
       messageId={messageId}
-      className={conversationItemClassName}
+      className={cn(
+        conversationItemClassName,
+        // A hidden row has no gap: it stays only so that the question row
+        // after it is a new row for the scroller.
+        group.hidden && !workingFooter && "hidden"
+      )}
     >
       <ConversationAssistantGroupView
         className={className}
@@ -891,6 +911,54 @@ function ConversationGroupView({
         hideToolBlocks={hideToolBlocks}
         store={store}
       />
+      {workingFooter}
+    </ConversationRow>
+  )
+}
+
+/**
+ * An answered question. The answer is a turn of the user, so the row is a
+ * scroll anchor and a target of the jumps between messages, like a user
+ * message. When the tool blocks are hidden, the row shows nothing.
+ */
+function ConversationQuestionGroupRow({
+  className,
+  groupKey,
+  hidden,
+  hideThinking,
+  hideToolBlocks,
+  messageId,
+  store,
+  workingFooter,
+}: {
+  className: string
+  groupKey: string
+  hidden: boolean
+  hideThinking: boolean
+  hideToolBlocks: boolean
+  messageId: string
+  store: ConversationItemsStore
+  workingFooter?: React.ReactNode
+}) {
+  return (
+    <ConversationRow
+      messageId={messageId}
+      scrollAnchor={!hidden}
+      className={cn(
+        conversationItemClassName,
+        hidden && !workingFooter && "hidden"
+      )}
+    >
+      <div data-user-message-anchor={hidden ? undefined : "true"}>
+        <ConversationAssistantGroupView
+          className={className}
+          groupKey={groupKey}
+          hideFooter
+          hideThinking={hideThinking}
+          hideToolBlocks={hideToolBlocks}
+          store={store}
+        />
+      </div>
       {workingFooter}
     </ConversationRow>
   )
@@ -938,14 +1006,14 @@ function ConversationUserGroupRow({
   )
 }
 
-function useConversationAssistantGroupItemKeys(
+function useConversationGroupParts(
   store: ConversationItemsStore,
   groupKey: string
 ) {
   return React.useSyncExternalStore(
-    (listener) => store.subscribeAssistantGroupItems(groupKey, listener),
-    () => store.getAssistantGroupItemKeys(groupKey),
-    () => store.getAssistantGroupItemKeys(groupKey)
+    (listener) => store.subscribeGroupParts(groupKey, listener),
+    () => store.getGroupParts(groupKey),
+    () => store.getGroupParts(groupKey)
   )
 }
 
@@ -964,14 +1032,14 @@ function ConversationAssistantGroupView({
   hideToolBlocks: boolean
   store: ConversationItemsStore
 }) {
-  const itemKeys = useConversationAssistantGroupItemKeys(store, groupKey)
+  const parts = useConversationGroupParts(store, groupKey)
   const [assistantMessagesStore] =
     React.useState<MutableAssistantMessagesStore>(() =>
       createMutableAssistantMessagesStore(
         assistantMessagesSnapshotFromStore({
           hideThinking,
           hideToolBlocks,
-          itemKeys,
+          parts,
           store,
         })
       )
@@ -983,15 +1051,18 @@ function ConversationAssistantGroupView({
         assistantMessagesSnapshotFromStore({
           hideThinking,
           hideToolBlocks,
-          itemKeys,
+          parts,
           store,
         })
       )
     }
 
     updateSnapshot()
-    return store.subscribeItems(itemKeys, updateSnapshot)
-  }, [assistantMessagesStore, hideThinking, hideToolBlocks, itemKeys, store])
+    return store.subscribeItems(
+      parts.map((part) => part.itemKey),
+      updateSnapshot
+    )
+  }, [assistantMessagesStore, hideThinking, hideToolBlocks, parts, store])
 
   return (
     <AssistantMessagesStoreCard
