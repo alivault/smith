@@ -11,6 +11,7 @@ import {
 import { SmithMark } from "@/components/smith-mark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { usePauseOffscreen } from "@/hooks/use-pause-offscreen"
 import { cn } from "@/lib/utils"
 import {
   Empty,
@@ -714,6 +715,8 @@ function AppShellConversationScroller({
 }
 
 function AppShellWorkingIndicatorLabel({ label }: { label: string }) {
+  // Out of view (a reply that grows below the bottom), the shimmer pauses.
+  const pauseRef = usePauseOffscreen<HTMLDivElement>(Boolean(label.trim()))
   if (!label.trim()) {
     return (
       <div aria-hidden="true" className="invisible leading-5 font-medium">
@@ -725,7 +728,12 @@ function AppShellWorkingIndicatorLabel({ label }: { label: string }) {
   // The shimmer of AI Elements (https://ui.shadcn.com/docs/utils/shimmer)
   // shows that the agent works.
   return (
-    <div className="shimmer leading-5 font-medium text-foreground">{label}</div>
+    <div
+      ref={pauseRef}
+      className="shimmer leading-5 font-medium text-foreground"
+    >
+      {label}
+    </div>
   )
 }
 
