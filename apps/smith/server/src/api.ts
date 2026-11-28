@@ -18,11 +18,7 @@ import {
   VERSION,
 } from "./config.ts"
 import type { Auth, UiRequests } from "./core/auth.ts"
-import {
-  applyToolUpdates,
-  type ConversationItem,
-  type ToolUpdateOperation,
-} from "./core/items.ts"
+import { ClientItems } from "./core/client-items.ts"
 import { PromptTokenCounter } from "./core/prompt-tokens.ts"
 import { scopeText } from "./core/system-prompt.ts"
 import type { Runtime } from "./core/runtime.ts"
@@ -2961,8 +2957,6 @@ async function completeText(api: ApiContext, prompt: string) {
 // -----------------------------------------------------------------------------
 // The event stream
 
-type Item = unknown
-
 /**
  * One viewer context's event stream: a bootstrap (missed events, the selected
  * agent's state, the agent list), then live events for that context and
@@ -2991,14 +2985,10 @@ function streamEvents(
   const pending: ServerEvent[] = []
   let ready = false
   let stream: SseStream | undefined
-  let liveAgent: string | undefined
-  // Drafts have no agent ID; their key tells two drafts apart.
-  let liveAgentKey: unknown
   let releaseWatch: (() => void) | undefined
   let watchedAgent: string | undefined
-  let previousItems: Item[] = []
-  let previousHistoryOffset: unknown
-  let itemsChangedByDelta = false
+  // What the client holds, so a state sync can be a patch.
+  const clientItems = new ClientItems()
 
   // The URL agent initializes this viewer. Later selections must follow
   // the viewer too: the client keeps the same EventSource when switching.
@@ -3020,54 +3010,24 @@ function streamEvents(
     if (!eventMatches(event, contextId, agent)) return
     const payload = event.payload
     if (payload.type === "state_sync") {
-      const items = Array.isArray(payload.items)
-        ? (payload.items as Item[])
-        : undefined
-      if (!items) {
+      if (!Array.isArray(payload.items)) {
         stream.send(payload, event.sequence)
         return
       }
-      const syncedAgent =
-        typeof payload.agentId === "string" ? payload.agentId : undefined
-      // A patch has no history offset. When the history window slides,
-      // send all items so the client can line up its older history.
-      const historyOffset = payload.historyOffset
-      if (
-        syncedAgent !== liveAgent ||
-        payload.agentKey !== liveAgentKey ||
-        itemsChangedByDelta ||
-        historyOffset !== previousHistoryOffset
-      ) {
-        liveAgent = syncedAgent
-        liveAgentKey = payload.agentKey
-        bindWatch(syncedAgent)
-        previousItems = items
-        previousHistoryOffset = historyOffset
-        itemsChangedByDelta = false
-        stream.send(payload, event.sequence)
-        return
-      }
-      stream.send(patchStateSync(previousItems, payload, items), event.sequence)
-      previousItems = items
+      // A patch has no history offset. When the history window slides, or
+      // the agent changes, the client gets all items.
+      stream.send(clientItems.sync(payload), event.sequence)
+      bindWatch(clientItems.agent)
       return
     }
     if (payload.type === "conversation_delta") {
-      // Tool output updates change committed items in place: keep the copy
-      // of the client's items, so the next state can still be a patch.
-      const operations = Array.isArray(payload.operations)
-        ? (payload.operations as { op?: unknown }[])
-        : []
-      if (
-        operations.length > 0 &&
-        operations.every((operation) => operation.op === "updateTool")
-      ) {
-        previousItems = applyToolUpdates(
-          previousItems as ConversationItem[],
-          operations as ToolUpdateOperation[]
-        )
-      } else {
-        itemsChangedByDelta = true
-      }
+      // Keep the copy of the client's items, so the next state can still be
+      // a patch.
+      clientItems.delta(
+        Array.isArray(payload.operations)
+          ? (payload.operations as { op?: unknown }[])
+          : []
+      )
     }
     stream.send(payload, event.sequence)
   }
@@ -3129,10 +3089,8 @@ function streamEvents(
         }
       }
     }
-    liveAgent = agent
-    liveAgentKey = statePayload.agentKey
     bindWatch(agent)
-    previousItems = Array.isArray(statePayload.items) ? statePayload.items : []
+    clientItems.reset(statePayload as Record<string, unknown>)
     stream.send(statePayload)
     stream.send(agentsPayload)
     ready = true
@@ -3164,52 +3122,4 @@ function streamEvents(
       detach()
       releaseWatch?.()
     })
-}
-
-/** A state sync whose items are a splice against what the client has. */
-function patchStateSync(
-  previous: Item[],
-  payload: Record<string, unknown>,
-  next: Item[]
-) {
-  const same = (left: Item, right: Item) =>
-    left === right || JSON.stringify(left) === JSON.stringify(right)
-  let start = 0
-  while (
-    start < previous.length &&
-    start < next.length &&
-    same(previous[start], next[start])
-  )
-    start += 1
-  let previousEnd = previous.length
-  let nextEnd = next.length
-  while (
-    previousEnd > start &&
-    nextEnd > start &&
-    same(previous[previousEnd - 1], next[nextEnd - 1])
-  ) {
-    previousEnd -= 1
-    nextEnd -= 1
-  }
-  const result: Record<string, unknown> = { ...payload }
-  delete result.items
-  result.itemsPatch = {
-    previousLength: previous.length,
-    start,
-    deleteCount: previousEnd - start,
-    items: next.slice(start, nextEnd),
-  }
-  for (const key of [
-    "historyOffset",
-    "historyTotalCount",
-    "availableSkills",
-    "firstMessage",
-    "agentId",
-    "agentFile",
-    "cwd",
-    "modified",
-  ]) {
-    delete result[key]
-  }
-  return result
 }

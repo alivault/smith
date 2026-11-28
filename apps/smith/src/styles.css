@@ -128,6 +128,20 @@
  * Outside such a pane, --pane-safe-bottom is not set, and both add nothing.
  * safe-bottom-none stops it for a part that is not at the bottom.
  */
+/* The shimmer (shadcn/tailwind.css) moves a background, so the browser
+   draws the text again in each frame. On a layer of its own, it draws only
+   the text, not the whole conversation around it. */
+@utility shimmer {
+  will-change: transform;
+}
+
+/* Out of view (usePauseOffscreen), an element and its children pause their
+   animations: they cost each frame, also when nobody sees them. */
+[data-offscreen],
+[data-offscreen] * {
+  animation-play-state: paused !important;
+}
+
 @utility safe-bottom-pane {
   --pane-safe-bottom: var(--safe-bottom);
 }

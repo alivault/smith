@@ -6,6 +6,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { usePauseOffscreen } from "@/hooks/use-pause-offscreen"
 import { cn } from "@/lib/utils"
 
 /*
@@ -31,13 +32,17 @@ function Trace({ className, ...props }: React.ComponentProps<"div">) {
 
 function TraceLine({
   className,
+  ref,
   status,
   ...props
 }: React.ComponentProps<"span"> & {
   status?: "running" | "error" | "pending"
 }) {
+  // A running line shimmers; out of view, it pauses.
+  const pauseRef = usePauseOffscreen(status === "running", ref)
   return (
     <span
+      ref={pauseRef}
       data-slot="trace-line"
       data-status={status}
       className={cn(
