@@ -34,7 +34,7 @@ import {
   COMPACT_WORKING_LABEL,
   type AppShellWorkingState,
 } from "@/features/smith/app-shell-working-state"
-import { conversationShowsActivity } from "@/features/smith/conversation-activity"
+import { turnAwaitsFirstOutput } from "@/features/smith/conversation-activity"
 import { DraftGitStatusBadge } from "@/features/smith/right-sidebar-git-header-actions"
 import {
   conversationNavShortcut,
@@ -1306,30 +1306,25 @@ function AppShellConversationWorkingFooter({
   workingStateStore: SmithStore<AppShellWorkingState | null>
 }) {
   const hasMessages = useConversationHasMessages(conversationItemsStore)
-  const showsActivity = React.useSyncExternalStore(
+  const awaitsFirstOutput = React.useSyncExternalStore(
     conversationItemsStore.subscribe,
-    () => conversationShowsActivity(conversationItemsStore.getSnapshot().items),
-    () => conversationShowsActivity(conversationItemsStore.getSnapshot().items)
+    () => turnAwaitsFirstOutput(conversationItemsStore.getSnapshot().items),
+    () => turnAwaitsFirstOutput(conversationItemsStore.getSnapshot().items)
   )
   const conversationMessageColumnClassName = centerMessages
     ? "mx-auto w-full max-w-[80ch]"
     : "w-full"
   const workingState = useSelector(workingStateStore)
-  // The plain "Working…" line shows only in the gaps, when nothing else in
-  // the conversation moves. Compaction, status text, and errors always show.
+  // The plain "Working…" line shows only until the turn's first output.
+  // After it, the steps of the turn show the work, also in the gaps.
+  // Compaction, status text, and errors always show.
   const plainWorking =
     !workingState?.error &&
     !workingState?.cancelable &&
     (workingState?.label === "Working…" ||
       workingState?.label === AWAITING_FIRST_RESPONSE_WORKING_LABEL)
-  // A gap shows the line only after it lasts a moment, so a short gap
-  // between two steps does not make it flash.
-  const plainGap = useTrueAfter(
-    Boolean(workingState) && plainWorking && !showsActivity,
-    WORKING_GAP_DELAY_MS
-  )
   const displayedWorkingState =
-    workingState && (!plainWorking || plainGap) ? workingState : null
+    workingState && (!plainWorking || awaitsFirstOutput) ? workingState : null
 
   if (!hasMessages || !displayedWorkingState) return null
 
@@ -1341,22 +1336,6 @@ function AppShellConversationWorkingFooter({
       />
     </div>
   )
-}
-
-const WORKING_GAP_DELAY_MS = 300
-
-/** `value`, but it turns true only after it was true for `delayMs`. */
-function useTrueAfter(value: boolean, delayMs: number) {
-  const [settled, setSettled] = React.useState(false)
-  React.useEffect(() => {
-    if (!value) {
-      setSettled(false)
-      return
-    }
-    const timer = window.setTimeout(() => setSettled(true), delayMs)
-    return () => window.clearTimeout(timer)
-  }, [value, delayMs])
-  return value && settled
 }
 
 function AppShellConversationMessageStack({
