@@ -142,6 +142,29 @@ function releaseFollowOutput(viewport: HTMLElement) {
   viewport.dispatchEvent(new WheelEvent("wheel", { bubbles: true }))
 }
 
+/**
+ * Whether a new turn holds the top of the view: the scroller shows its
+ * spacer below the reply, so the turn can start at the top.
+ */
+function newTurnHoldsTop(viewport: HTMLElement) {
+  const spacer = viewport.querySelector<HTMLElement>(
+    "[data-message-scroller-spacer]"
+  )
+  return Boolean(spacer && !spacer.hidden)
+}
+
+/**
+ * Stop follow-output for a reader signal (opening a tool row, a key, a
+ * text selection). While a new turn holds the top, do nothing: the
+ * scroller keeps the turn in place as the row opens. Freed there, it sees
+ * the end of the reply in view, follows the bottom again, and its next
+ * scroll to the end removes the spacer, so the view jumps.
+ */
+function releaseFollowOutputForReader(viewport: HTMLElement) {
+  if (newTurnHoldsTop(viewport)) return
+  releaseFollowOutput(viewport)
+}
+
 function isOpeningToolCollapsibleTrigger(
   target: EventTarget | null,
   viewport: HTMLElement
@@ -178,7 +201,7 @@ export function useAppShellMessageScroll() {
 
     const handlePointerDown = (event: PointerEvent) => {
       if (isOpeningToolCollapsibleTrigger(event.target, viewport)) {
-        releaseFollowOutput(viewport)
+        releaseFollowOutputForReader(viewport)
       }
     }
 
@@ -187,7 +210,7 @@ export function useAppShellMessageScroll() {
         (event.key === "Enter" || event.key === " ") &&
         isOpeningToolCollapsibleTrigger(event.target, viewport)
       ) {
-        releaseFollowOutput(viewport)
+        releaseFollowOutputForReader(viewport)
       }
     }
 
@@ -200,10 +223,7 @@ export function useAppShellMessageScroll() {
     // it still does, so the reader can leave that position.
     const handleDownwardWheel = (event: WheelEvent) => {
       if (event.deltaY <= 0 || !event.isTrusted) return
-      const spacer = viewport.querySelector<HTMLElement>(
-        "[data-message-scroller-spacer]"
-      )
-      if (spacer && !spacer.hidden) return
+      if (newTurnHoldsTop(viewport)) return
       event.stopPropagation()
     }
 
@@ -211,7 +231,7 @@ export function useAppShellMessageScroll() {
       const selection = document.getSelection()
       if (!selection || selection.isCollapsed) return
       if (viewport.contains(selection.anchorNode)) {
-        releaseFollowOutput(viewport)
+        releaseFollowOutputForReader(viewport)
       }
     }
 
