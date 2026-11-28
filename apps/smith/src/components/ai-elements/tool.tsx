@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils"
  * Tool, the AI Elements pattern
  * (https://ui.shadcn.com/docs/ai-elements/base/tool): a tool call as one
  * Trace line that opens to show its input and output. The line names the
- * tool and summarizes the call; the title shimmers while the tool runs and
- * turns red when it fails.
+ * tool and summarizes the call; the title is amber while the tool runs and
+ * red when it fails.
  */
 function Tool({
   className,

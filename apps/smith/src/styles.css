@@ -135,13 +135,6 @@
   will-change: transform;
 }
 
-/* Out of view (usePauseOffscreen), an element and its children pause their
-   animations: they cost each frame, also when nobody sees them. */
-[data-offscreen],
-[data-offscreen] * {
-  animation-play-state: paused !important;
-}
-
 @utility safe-bottom-pane {
   --pane-safe-bottom: var(--safe-bottom);
 }

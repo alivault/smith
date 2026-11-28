@@ -1,4 +1,5 @@
 import * as React from "react"
+import { DnaLoader } from "@/components/ui/dna-loader-view"
 import {
   ArrowDownIcon,
   ArrowDownToLineIcon,
@@ -9,7 +10,6 @@ import {
 import { SmithMark } from "@/components/smith-mark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { usePauseOffscreen } from "@/hooks/use-pause-offscreen"
 import { cn } from "@/lib/utils"
 import {
   Empty,
@@ -710,29 +710,6 @@ function AppShellConversationScroller({
   )
 }
 
-function AppShellWorkingIndicatorLabel({ label }: { label: string }) {
-  // Out of view (a reply that grows below the bottom), the shimmer pauses.
-  const pauseRef = usePauseOffscreen<HTMLDivElement>(Boolean(label.trim()))
-  if (!label.trim()) {
-    return (
-      <div aria-hidden="true" className="invisible leading-5 font-medium">
-        Working…
-      </div>
-    )
-  }
-
-  // The shimmer of AI Elements (https://ui.shadcn.com/docs/utils/shimmer)
-  // shows that the agent works.
-  return (
-    <div
-      ref={pauseRef}
-      className="shimmer leading-5 font-medium text-foreground"
-    >
-      {label}
-    </div>
-  )
-}
-
 function AppShellMessagesWorkingIndicator({
   onCancel,
   state,
@@ -755,7 +732,15 @@ function AppShellMessagesWorkingIndicator({
             ) : state.error ? (
               <div className="font-medium text-destructive">{state.label}</div>
             ) : (
-              <AppShellWorkingIndicatorLabel label={state.label} />
+              <span className="flex items-center gap-2">
+                {/* The DNA strand of the old Pi web client shows the work. */}
+                <DnaLoader className="h-5 w-[86px] text-primary" />
+                {state.label.trim() && state.label !== "Working…" ? (
+                  <span className="leading-5">{state.label}</span>
+                ) : (
+                  <span className="sr-only">Working…</span>
+                )}
+              </span>
             )}
           </div>
           {state.cancelable && !state.done && !state.error && onCancel ? (

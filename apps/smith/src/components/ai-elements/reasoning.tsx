@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils"
 /**
  * Reasoning, the AI Elements pattern
  * (https://ui.shadcn.com/docs/ai-elements/base/reasoning): the agent's
- * thinking as a Trace line that opens to show the text. The title
- * shimmers while the thinking streams.
+ * thinking as a Trace line that opens to show the text. The title is
+ * amber while the thinking streams.
  */
 function Reasoning(props: React.ComponentProps<typeof TraceCollapsible>) {
   return <TraceCollapsible data-conversation-row="true" {...props} />
