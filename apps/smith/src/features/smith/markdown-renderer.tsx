@@ -1,11 +1,8 @@
 "use client"
 
 import * as React from "react"
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
-import rehypeRaw from "rehype-raw"
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
-import remarkBreaks from "remark-breaks"
-import remarkGfm from "remark-gfm"
+import { defaultUrlTransform, type Components } from "react-markdown"
+import { defaultSchema } from "rehype-sanitize"
 
 import {
   CodeBlock as UiCodeBlock,
@@ -21,6 +18,7 @@ import {
   useFileLinkScope,
 } from "@/features/smith/file-links"
 import { HighlightedCode } from "@/features/smith/highlighted-code"
+import { renderMarkdown } from "@/features/smith/markdown-processor"
 import type { HighlightResponse } from "@/lib/smith/api"
 import {
   parseFileLinkHref,
@@ -37,8 +35,6 @@ const highlightCache = new Map<
   Promise<HighlightResponse> | HighlightResponse
 >()
 
-const MemoizedReactMarkdown = React.memo(ReactMarkdown)
-type ReactMarkdownProps = React.ComponentProps<typeof ReactMarkdown>
 // Links that open a desktop app, for example a note in Obsidian. The default
 // schema removes them. Unsafe schemes such as javascript: stay blocked.
 const APP_LINK_PROTOCOLS = ["obsidian", "vscode", "cursor", "zed", "file"]
@@ -57,14 +53,6 @@ const APP_LINK_PATTERN = new RegExp(
 function markdownUrlTransform(url: string) {
   return APP_LINK_PATTERN.test(url) ? url : defaultUrlTransform(url)
 }
-
-const MARKDOWN_REHYPE_PLUGINS = [
-  rehypeRaw,
-  [rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA],
-] satisfies NonNullable<ReactMarkdownProps["rehypePlugins"]>
-const MARKDOWN_REMARK_PLUGINS = [remarkGfm]
-// User text keeps each line break, as typed in the prompt box.
-const MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [remarkGfm, remarkBreaks]
 
 type MarkdownFenceRange = {
   end: number
@@ -285,9 +273,7 @@ const MARKDOWN_COMPONENTS = {
   a: MarkdownAnchor,
   code: MarkdownCode,
   pre: MarkdownPre,
-} satisfies NonNullable<
-  React.ComponentProps<typeof ReactMarkdown>["components"]
->
+} satisfies Components
 
 function parseCodeLanguage(className?: string) {
   const match = className?.match(/language-([A-Za-z0-9_+#.-]+)/)
@@ -723,19 +709,21 @@ const MarkdownChunk = React.memo(function MarkdownChunk({
       : {}),
     streaming,
   } satisfies MarkdownRenderingContextValue
+  // User text (breaks) keeps each line break, as typed in the prompt box.
+  const content = React.useMemo(
+    () =>
+      renderMarkdown(text, {
+        breaks,
+        components: MARKDOWN_COMPONENTS,
+        sanitizeSchema: MARKDOWN_SANITIZE_SCHEMA,
+        urlTransform: markdownUrlTransform,
+      }),
+    [breaks, text]
+  )
 
   return (
     <MarkdownRenderingContext value={renderingContext}>
-      <MemoizedReactMarkdown
-        rehypePlugins={MARKDOWN_REHYPE_PLUGINS}
-        remarkPlugins={
-          breaks ? MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : MARKDOWN_REMARK_PLUGINS
-        }
-        components={MARKDOWN_COMPONENTS}
-        urlTransform={markdownUrlTransform}
-      >
-        {text}
-      </MemoizedReactMarkdown>
+      {content}
     </MarkdownRenderingContext>
   )
 })
