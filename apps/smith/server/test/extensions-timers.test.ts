@@ -217,7 +217,8 @@ void test("a timer fires and wakes the agent with its message", async () => {
   try {
     const conversation = await start(harness, dir)
     const item = await itemWith(harness, conversation.id, () => true)
-    assert.equal(item.status, "pending")
+    // On a slow machine the 1 s timer can fire before the first look.
+    assert.ok(["pending", "done"].includes(item.status), item.status)
     assert.equal(item.kind, "timer")
     const done = await itemWith(
       harness,
