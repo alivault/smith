@@ -401,7 +401,7 @@ function useAppShellAgentWorkspaceView({
   >(() =>
     createSmithStore<AppShellDisplaySettingsState>(
       {
-        autoScrollEnabled: false,
+        autoScrollEnabled: true,
         centerMessages: true,
         hideToolBlocks: false,
       },

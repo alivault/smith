@@ -539,9 +539,9 @@ export function readStoredCenterMessages() {
 }
 
 export function readStoredAutoScrollEnabled() {
-  // Off by default, as in the shadcn MessageScroller: a new turn pins to the
-  // top and the reply grows past the bottom without moving the view.
-  return safeLocalStorageGetItem(AUTO_SCROLL_ENABLED_STORAGE_KEY) === "1"
+  // On by default: after a new turn pins to the top, the view follows the
+  // reply once it fills the screen. Settings can turn it off.
+  return safeLocalStorageGetItem(AUTO_SCROLL_ENABLED_STORAGE_KEY) !== "0"
 }
 
 export function readStoredRightSidebarOpen() {
