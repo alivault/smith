@@ -31,11 +31,23 @@ async function setup() {
 }
 
 /** Resolves when `check` is true, tested now and after each change event. */
-function when(mcp: McpExtension, check: () => boolean) {
-  return new Promise<void>((resolve) => {
-    if (check()) resolve()
+/**
+ * Resolves when `check` is true after a change. It fails after `ms`, so a
+ * missed file watch event fails the test and does not hang the suite.
+ */
+function when(mcp: McpExtension, check: () => boolean, ms = 20_000) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`MCP did not change as expected in ${ms} ms`)),
+      ms
+    )
+    const done = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    if (check()) done()
     mcp.onChange(() => {
-      if (check()) resolve()
+      if (check()) done()
     })
   })
 }
