@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test"
 
 import type { AssistantItem, ConversationItem, ToolBlock } from "@/lib/smith"
-import { applyConversationDelta } from "@/lib/smith/sync"
+import { applyConversationDelta, buildItemsFromSync } from "@/lib/smith/sync"
 
 function tool(callId: string, output = ""): ToolBlock {
   return {
@@ -87,5 +87,60 @@ describe("applyConversationDelta with updateTool", () => {
   it("keeps the items when no tool block has the call", () => {
     const items = committedItems()
     expect(applyConversationDelta(items, update("call-x", "out"))).toBe(items)
+  })
+})
+
+describe("buildItemsFromSync", () => {
+  it("keeps the streaming row when its answer commits into a full history window", () => {
+    const committed = (n: number): ConversationItem => ({
+      kind: "assistant",
+      itemKey: `entry:${n}`,
+      blocks: [
+        { type: "text", blockKey: `entry:${n}:text`, text: `reply ${n}` },
+      ],
+      streaming: false,
+      done: true,
+    })
+    const tool = (blockKey: string, running: boolean) =>
+      ({
+        type: "tool",
+        blockKey,
+        callId: "call-1",
+        name: "bash",
+        args: { command: "ls" },
+        output: "",
+        isError: false,
+        running,
+      }) as ToolBlock
+    const window = Array.from({ length: 100 }, (_, i) => committed(i))
+    const streaming: AssistantItem = {
+      kind: "assistant",
+      itemKey: "streaming",
+      renderKey: "message:100",
+      blocks: [tool("streaming:tool:call-1", true)],
+      streaming: true,
+      done: false,
+    }
+    const previous = [...window, streaming]
+    // The window moves by one: the oldest item goes, the answer commits.
+    const next: ConversationItem[] = [
+      ...window.slice(1),
+      {
+        kind: "assistant",
+        itemKey: "entry:100",
+        blocks: [tool("entry:100:tool:call-1", true)],
+        streaming: false,
+        done: true,
+      },
+    ]
+    const { items } = buildItemsFromSync(
+      { type: "state_sync", streaming: true, items: next } as never,
+      previous
+    )
+    const last = items.at(-1) as AssistantItem
+    expect(last.itemKey).toBe("entry:100")
+    expect(last.renderKey).toBe("message:100")
+    const block = last.blocks[0] as ToolBlock
+    expect(block.renderKey ?? block.blockKey).toBe("streaming:tool:call-1")
   })
 })

@@ -425,6 +425,27 @@ function reconcileConversationItems(
     return unmatchedOptimisticItems.splice(index, 1)[0]
   }
 
+  // The server replaces the streaming answer with a committed item that has
+  // a new key. When the history window is full, the window also moves by
+  // one item, so the index does not find the streaming item either. Find it
+  // by its content, so the row keeps its render key and does not remount
+  // (a tool line would vanish for a moment and come back).
+  const unmatchedStreamingItems = previousItems.filter(
+    (item): item is AssistantItem =>
+      item.kind === "assistant" && Boolean(item.streaming)
+  )
+  const takeStreamingItem = (item: ConversationItem) => {
+    if (item.kind !== "assistant" || item.streaming) return
+    if (item.itemKey && previousItemsByKey.has(item.itemKey)) return
+    const index = unmatchedStreamingItems.findIndex(
+      (candidate) =>
+        candidate.blocks.length > 0 &&
+        streamingAssistantItemContinues(candidate, item)
+    )
+    if (index < 0) return
+    return unmatchedStreamingItems.splice(index, 1)[0]
+  }
+
   let changed = previousItems.length !== nextItems.length
   const reconciled: Array<ConversationItem> = []
 
@@ -439,6 +460,7 @@ function reconcileConversationItems(
         ? previousItemsByRenderKey.get(nextRenderKey)
         : undefined) ||
       takeOptimisticItem(nextItem) ||
+      takeStreamingItem(nextItem) ||
       previousItems[index]
 
     if (!previousItem || previousItem.kind !== nextItem.kind) {
