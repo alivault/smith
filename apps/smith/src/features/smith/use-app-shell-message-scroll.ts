@@ -191,6 +191,22 @@ export function useAppShellMessageScroll() {
       }
     }
 
+    // The primitive ends follow-output on every wheel event. A trackpad
+    // fling sends its rest as wheel events also after the view reached the
+    // bottom; the last scroll event turned following on, and those wheel
+    // events turned it off again, with no scroll event after them. Scrolling
+    // down never means "stop following", so the primitive does not see a
+    // downward wheel. While a new message holds the top (the spacer shows),
+    // it still does, so the reader can leave that position.
+    const handleDownwardWheel = (event: WheelEvent) => {
+      if (event.deltaY <= 0 || !event.isTrusted) return
+      const spacer = viewport.querySelector<HTMLElement>(
+        "[data-message-scroller-spacer]"
+      )
+      if (spacer && !spacer.hidden) return
+      event.stopPropagation()
+    }
+
     const handleSelectionChange = () => {
       const selection = document.getSelection()
       if (!selection || selection.isCollapsed) return
@@ -214,6 +230,10 @@ export function useAppShellMessageScroll() {
       passive: true,
     })
     viewport.addEventListener("keydown", handleKeyDown, { capture: true })
+    viewport.addEventListener("wheel", handleDownwardWheel, {
+      capture: true,
+      passive: true,
+    })
     document.addEventListener("selectionchange", handleSelectionChange)
 
     return () => {
@@ -224,6 +244,9 @@ export function useAppShellMessageScroll() {
         capture: true,
       })
       viewport.removeEventListener("keydown", handleKeyDown, { capture: true })
+      viewport.removeEventListener("wheel", handleDownwardWheel, {
+        capture: true,
+      })
       document.removeEventListener("selectionchange", handleSelectionChange)
     }
   }, [jumpStateStore, viewport])
