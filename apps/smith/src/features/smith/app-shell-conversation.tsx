@@ -28,11 +28,9 @@ import {
 } from "@/features/smith/app-shell-common"
 import type { AppShellDisplaySettingsState } from "@/features/smith/app-shell-types"
 import {
-  AWAITING_FIRST_RESPONSE_WORKING_LABEL,
   COMPACT_WORKING_LABEL,
   type AppShellWorkingState,
 } from "@/features/smith/app-shell-working-state"
-import { turnAwaitsFirstOutput } from "@/features/smith/conversation-activity"
 import { DraftGitStatusBadge } from "@/features/smith/right-sidebar-git-header-actions"
 import {
   conversationNavShortcut,
@@ -1292,33 +1290,20 @@ function AppShellConversationWorkingFooter({
   workingStateStore: SmithStore<AppShellWorkingState | null>
 }) {
   const hasMessages = useConversationHasMessages(conversationItemsStore)
-  const awaitsFirstOutput = React.useSyncExternalStore(
-    conversationItemsStore.subscribe,
-    () => turnAwaitsFirstOutput(conversationItemsStore.getSnapshot().items),
-    () => turnAwaitsFirstOutput(conversationItemsStore.getSnapshot().items)
-  )
   const conversationMessageColumnClassName = centerMessages
     ? "mx-auto w-full max-w-[80ch]"
     : "w-full"
+  // "Working…" shows for the whole turn, also while a step runs, so the
+  // long gaps between steps never look idle.
   const workingState = useSelector(workingStateStore)
-  // The plain "Working…" line shows only until the turn's first output.
-  // After it, the steps of the turn show the work, also in the gaps.
-  // Compaction, status text, and errors always show.
-  const plainWorking =
-    !workingState?.error &&
-    !workingState?.cancelable &&
-    (workingState?.label === "Working…" ||
-      workingState?.label === AWAITING_FIRST_RESPONSE_WORKING_LABEL)
-  const displayedWorkingState =
-    workingState && (!plainWorking || awaitsFirstOutput) ? workingState : null
 
-  if (!hasMessages || !displayedWorkingState) return null
+  if (!hasMessages || !workingState) return null
 
   return (
     <div className={conversationMessageColumnClassName}>
       <AppShellMessagesWorkingIndicator
         onCancel={onCancelCompaction}
-        state={displayedWorkingState}
+        state={workingState}
       />
     </div>
   )
