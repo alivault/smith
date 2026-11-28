@@ -1,6 +1,4 @@
 import * as React from "react"
-import { StatusIcon } from "@/components/ai-elements/status-icon"
-import { TraceIcon } from "@/components/ui/trace"
 import {
   ArrowDownIcon,
   ArrowDownToLineIcon,
@@ -750,19 +748,7 @@ function AppShellMessagesWorkingIndicator({
       aria-live="polite"
       className="flex w-full items-start gap-2 text-sm text-muted-foreground"
     >
-      {/* The same icon, size, and spacing as the lines of the agent's work
-          (Trace and its status icon), so the two line up. */}
-      <TraceIcon
-        className={cn(
-          "mt-0.5",
-          state.done && "text-emerald-600",
-          state.error && "text-destructive"
-        )}
-      >
-        <StatusIcon
-          status={state.done ? undefined : state.error ? "error" : "running"}
-        />
-      </TraceIcon>
+      {/* No icon: it lines up with the lines of the agent's work. */}
       <div className="min-w-0 flex-1">
         <div className="flex min-h-5 min-w-0 items-center justify-start gap-2">
           <div className="min-w-0 shrink-0">

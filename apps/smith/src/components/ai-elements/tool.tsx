@@ -5,12 +5,11 @@ import {
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
   TraceDescription,
-  TraceIcon,
   TraceLine,
   TraceSummary,
   TraceTitle,
 } from "@/components/ui/trace"
-import { StatusIcon, traceStatus } from "@/components/ai-elements/status-icon"
+import { traceStatus } from "@/components/ai-elements/status-icon"
 import { cn } from "@/lib/utils"
 
 /**
@@ -52,9 +51,6 @@ function ToolHeader({
   return (
     <TraceCollapsibleTrigger data-conversation-tool-collapsible-trigger="true">
       <TraceLine status={traceStatus(running, isError)}>
-        <TraceIcon>
-          <StatusIcon status={traceStatus(running, isError)} />
-        </TraceIcon>
         <TraceTitle className="shrink-0 overflow-visible font-medium whitespace-nowrap">
           {label}
         </TraceTitle>

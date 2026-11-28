@@ -5,12 +5,11 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
-  TraceIcon,
   TraceLine,
   TraceSummary,
   TraceTitle,
 } from "@/components/ui/trace"
-import { StatusIcon, traceStatus } from "@/components/ai-elements/status-icon"
+import { traceStatus } from "@/components/ai-elements/status-icon"
 import { cn } from "@/lib/utils"
 
 /**
@@ -37,9 +36,6 @@ function ChainOfThoughtHeader({
   return (
     <TraceCollapsibleTrigger data-conversation-tool-collapsible-trigger="true">
       <TraceLine status={traceStatus(running, isError)}>
-        <TraceIcon>
-          <StatusIcon status={traceStatus(running, isError)} />
-        </TraceIcon>
         <TraceTitle
           className={cn(summary && "shrink-0 overflow-visible font-medium")}
         >
@@ -79,9 +75,6 @@ function ChainOfThoughtStep({
 }) {
   return (
     <TraceLine status={traceStatus(running, isError)} className="max-w-full">
-      <TraceIcon>
-        <StatusIcon status={traceStatus(running, isError)} />
-      </TraceIcon>
       <TraceTitle className="shrink-0 overflow-visible font-medium text-foreground">
         {label}
       </TraceTitle>

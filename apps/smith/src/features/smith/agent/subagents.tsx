@@ -21,7 +21,6 @@ import {
   TraceCollapsible,
   TraceCollapsibleContent,
   TraceCollapsibleTrigger,
-  TraceIcon,
   TraceLine,
   TraceSummary,
   TraceTitle,
@@ -52,7 +51,7 @@ import {
   useToolRenderContext,
   type ToolRendererProps,
 } from "@/features/smith/tool-renderers/registry"
-import { StatusIcon, traceStatus } from "@/components/ai-elements/status-icon"
+import { traceStatus } from "@/components/ai-elements/status-icon"
 import { cn } from "@/lib/utils"
 import { useMachineId } from "@/lib/smith/machine-context"
 
@@ -290,9 +289,6 @@ function SpawnCard({ block }: ToolRendererProps) {
           disabled={!hasDetails}
         >
           <TraceLine status={traceStatus(running, block.isError)}>
-            <TraceIcon>
-              <StatusIcon status={traceStatus(running, block.isError)} />
-            </TraceIcon>
             <TraceTitle className="shrink-0 overflow-visible font-medium whitespace-nowrap">
               Subagent
             </TraceTitle>
