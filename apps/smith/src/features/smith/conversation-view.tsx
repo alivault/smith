@@ -46,8 +46,6 @@ import {
   ChainOfThought,
   ChainOfThoughtContent,
   ChainOfThoughtHeader,
-  ChainOfThoughtStep,
-  ChainOfThoughtSteps,
 } from "@/components/ai-elements/chain-of-thought"
 import {
   Reasoning,
@@ -68,12 +66,21 @@ import { Message, MessageContent, MessageFooter } from "@/components/ui/message"
 import { Button } from "@/components/ui/button"
 import { TitleTooltip } from "@/components/ui/tooltip"
 import {
-  exploreShellCommandNameFromTool,
+  getToolArgNumber,
+  getToolArgText,
+  normalizeToolArgs,
   rawShellCommandTextFromTool,
-  toolArgsAreIncompleteJsonObject,
-  toolCategoryFromTool,
-  toolCouldBecomeExploreFromTool,
-} from "@/lib/smith/tool-classification"
+  searchToolSummary,
+} from "@/lib/smith/tool-args"
+import {
+  assistantBlockDescriptors,
+  assistantBlockIsVisible,
+  assistantBlockKey,
+  assistantBlockRenderKeys,
+  reconcileAssistantBlockDescriptors,
+  type AssistantBlockDescriptor,
+  type AssistantConversationBlock,
+} from "@/features/smith/assistant-blocks"
 import {
   parseStackTrace,
   parseTestSummary,
@@ -101,34 +108,6 @@ export function promptImageKey(
   image: Pick<PromptImage, "previewUrl" | "data">
 ) {
   return `${image.previewUrl}:${image.data.slice(0, 24)}`
-}
-
-function toolArgsKey(args: unknown) {
-  if (typeof args === "string") return args
-  if (args == null) return ""
-
-  try {
-    return JSON.stringify(args)
-  } catch {
-    return ""
-  }
-}
-
-function assistantBlockKey(
-  block: Extract<ConversationItem, { kind: "assistant" }>["blocks"][number]
-) {
-  switch (block.type) {
-    case "text":
-      return `text:${block.text}`
-    case "thinking":
-      return `thinking:${block.text}`
-    case "tool":
-      return `tool:${block.callId || block.name || "tool"}:${toolArgsKey(block.args)}`
-    case "compaction":
-      return `compaction:${block.tokensBefore}:${block.estimatedTokensAfter ?? ""}:${block.summary}`
-    default:
-      return "block"
-  }
 }
 
 function userMessageLabel(item: Extract<ConversationItem, { kind: "user" }>) {
@@ -161,31 +140,6 @@ function toolDisplayName(name?: string) {
     default:
       return name || "Tool"
   }
-}
-
-function normalizeToolArgs(args: unknown) {
-  if (!args) return undefined
-  if (typeof args === "object") {
-    return args as Record<string, unknown>
-  }
-  if (typeof args !== "string") return undefined
-
-  try {
-    const parsed = JSON.parse(args)
-    return parsed && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function getToolArgText(
-  args: Record<string, unknown> | undefined,
-  key: string
-) {
-  const value = args?.[key]
-  return typeof value === "string" && value.trim() ? value.trim() : ""
 }
 
 function toolCommandPreview(
@@ -360,7 +314,8 @@ function toolSummary(
       ? toolReadLocation(block)
       : block.name === "write"
         ? writeToolSummary(block)
-        : toolCommandPreview(block)
+        : searchToolSummary(block.name, block.args) ||
+          (block.name === "bash" ? "" : toolCommandPreview(block))
   if (preview) return collapseToolPreview(preview)
   if (block.running) return "Running"
   if (block.isError) return "Failed"
@@ -450,42 +405,11 @@ function toolOutputText(
   return "No output available."
 }
 
-type AssistantConversationBlock = Extract<
-  ConversationItem,
-  { kind: "assistant" }
->["blocks"][number]
-
 type AssistantToolBlock = AssistantConversationBlock & { type: "tool" }
-
-type AssistantBlockGroup =
-  | {
-      type: "block"
-      key: string
-      block: AssistantConversationBlock
-    }
-  | {
-      type: "explore"
-      key: string
-      blocks: Array<AssistantToolBlock>
-      blockKeys: Array<string>
-    }
-
-type AssistantBlockGroupDescriptor =
-  | {
-      type: "block"
-      key: string
-      blockKey: string
-      blockType: AssistantConversationBlock["type"]
-    }
-  | {
-      type: "explore"
-      key: string
-      blockKeys: Array<string>
-    }
 
 type AssistantBlockStoreSnapshot = {
   blockByKey: Map<string, AssistantConversationBlock>
-  groups: Array<AssistantBlockGroupDescriptor>
+  groups: Array<AssistantBlockDescriptor>
   revision: number
 }
 
@@ -520,267 +444,10 @@ type AssistantMessagesShellStore = {
 
 type AssistantBlockStore = {
   getBlock: (key: string) => AssistantConversationBlock | undefined
-  getBlocks: (keys: Array<string>) => Array<AssistantConversationBlock>
-  getGroups: () => Array<AssistantBlockGroupDescriptor>
+  getGroups: () => Array<AssistantBlockDescriptor>
   setBlocks: (blocks: Array<AssistantConversationBlock>) => void
   subscribe: (listener: () => void) => () => void
   subscribeBlocks: (keys: Array<string>, listener: () => void) => () => void
-}
-
-function exploreShellCommandName(
-  block: Extract<ConversationItem, { kind: "assistant" }>["blocks"][number]
-) {
-  return block.type === "tool"
-    ? exploreShellCommandNameFromTool(block.name, block.args)
-    : ""
-}
-
-function matchesExploreToolBlock(block: AssistantConversationBlock) {
-  if (block.type !== "tool") return false
-  return (
-    block.category === "explore" ||
-    toolCategoryFromTool(block.name, block.args) === "explore"
-  )
-}
-
-function isExploreToolBlock(
-  block: AssistantConversationBlock
-): block is AssistantToolBlock {
-  return matchesExploreToolBlock(block)
-}
-
-function isPendingUnclassifiedToolBlock(block: AssistantConversationBlock) {
-  if (
-    block.type !== "tool" ||
-    !block.running ||
-    matchesExploreToolBlock(block)
-  ) {
-    return false
-  }
-
-  if (!block.name) {
-    return true
-  }
-
-  if (block.name === "bash") {
-    const category = toolCategoryFromTool(block.name, block.args)
-    return (
-      !rawShellCommandText(block) ||
-      (category !== "explore" &&
-        (toolArgsAreIncompleteJsonObject(block.args) ||
-          toolCouldBecomeExploreFromTool(block.name, block.args)))
-    )
-  }
-
-  return false
-}
-
-function getToolArgNumber(
-  args: Record<string, unknown> | undefined,
-  key: string
-) {
-  const value = args?.[key]
-  const numberValue =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && value.trim()
-        ? Number(value)
-        : Number.NaN
-
-  return Number.isFinite(numberValue) ? numberValue : undefined
-}
-
-function pathBaseName(path: string) {
-  const normalized = path.replace(/\\/g, "/").trim()
-  if (!normalized) return ""
-
-  const parts = normalized.split("/")
-  return parts[parts.length - 1] || normalized
-}
-
-function formatExploreArg(
-  key: string,
-  value: string | number | undefined
-): string {
-  if (value == null) return ""
-
-  const text =
-    typeof value === "number" ? String(value) : collapseToolPreview(value)
-
-  return text ? `${key}=${text}` : ""
-}
-
-function formatExploreCount(
-  count: number,
-  singular: string,
-  plural = `${singular}s`
-) {
-  return `${count} ${count === 1 ? singular : plural}`
-}
-
-function exploreGroupSummary(
-  blocks: Array<
-    Extract<ConversationItem, { kind: "assistant" }>["blocks"][number] & {
-      type: "tool"
-    }
-  >
-) {
-  let readCount = 0
-  let searchCount = 0
-  let listCount = 0
-
-  for (const block of blocks) {
-    if (block.name === "read") {
-      readCount += 1
-      continue
-    }
-    const shellCommandName = exploreShellCommandName(block)
-    if (
-      block.name === "ls" ||
-      block.name === "list" ||
-      shellCommandName === "ls"
-    ) {
-      listCount += 1
-      continue
-    }
-    searchCount += 1
-  }
-
-  return [
-    readCount > 0 ? formatExploreCount(readCount, "read") : "",
-    searchCount > 0
-      ? formatExploreCount(searchCount, "search", "searches")
-      : "",
-    listCount > 0 ? formatExploreCount(listCount, "list") : "",
-  ]
-    .filter(Boolean)
-    .join(", ")
-}
-
-function exploreGroupStatusLabel() {
-  return "Explore"
-}
-
-function exploreToolLine(
-  block: Extract<ConversationItem, { kind: "assistant" }>["blocks"][number] & {
-    type: "tool"
-  }
-) {
-  const args = normalizeToolArgs(block.args)
-  const path =
-    getToolArgText(args, "path") || getToolArgText(args, "filePath") || "/"
-  const status = block.running ? "Running" : block.isError ? "Failed" : ""
-
-  switch (block.name) {
-    case "read":
-      return {
-        label: "Read",
-        file: toolFileTarget(block),
-        details: [
-          pathBaseName(path) || path,
-          formatExploreArg("offset", getToolArgNumber(args, "offset")),
-          formatExploreArg("limit", getToolArgNumber(args, "limit")),
-          status,
-        ]
-          .filter(Boolean)
-          .join("  "),
-      }
-    case "grep":
-    case "rg":
-      return {
-        label: block.name === "rg" ? "Ripgrep" : "Grep",
-        details: [
-          path,
-          formatExploreArg(
-            "pattern",
-            getToolArgText(args, "pattern") || getToolArgText(args, "query")
-          ),
-          formatExploreArg("include", getToolArgText(args, "include")),
-          status,
-        ]
-          .filter(Boolean)
-          .join("  "),
-      }
-    case "glob":
-      return {
-        label: "Glob",
-        details: [
-          path,
-          formatExploreArg("pattern", getToolArgText(args, "pattern")),
-          status,
-        ]
-          .filter(Boolean)
-          .join("  "),
-      }
-    case "find":
-      return {
-        label: "Find",
-        details: [
-          path,
-          formatExploreArg(
-            "pattern",
-            getToolArgText(args, "pattern") ||
-              getToolArgText(args, "query") ||
-              getToolArgText(args, "name")
-          ),
-          formatExploreArg("limit", getToolArgNumber(args, "limit")),
-          status,
-        ]
-          .filter(Boolean)
-          .join("  "),
-      }
-    case "ls":
-    case "list":
-      return {
-        label: "List",
-        details: [
-          path,
-          formatExploreArg("limit", getToolArgNumber(args, "limit")),
-          status,
-        ]
-          .filter(Boolean)
-          .join("  "),
-      }
-    case "bash": {
-      const shellCommandName = exploreShellCommandName(block)
-      const label =
-        shellCommandName === "rg"
-          ? "Ripgrep"
-          : shellCommandName === "ls"
-            ? "List"
-            : shellCommandName
-              ? `${shellCommandName[0]?.toUpperCase()}${shellCommandName.slice(1)}`
-              : "Bash"
-
-      return {
-        label,
-        details: [collapseToolPreview(rawShellCommandText(block)), status]
-          .filter(Boolean)
-          .join("  "),
-      }
-    }
-    default:
-      return {
-        label: toolDisplayName(block.name),
-        details: toolSummary(block),
-      }
-  }
-}
-
-/**
- * React keys for the visible blocks of a message group. Keys do not include
- * the block position, so a block keeps its key when blocks before it appear
- * or disappear. The position only separates duplicate keys.
- */
-function assistantBlockRenderKeys(blocks: Array<AssistantConversationBlock>) {
-  const seen = new Set<string>()
-  return blocks.map((block, index) => {
-    const baseKey =
-      block.renderKey || block.blockKey || assistantBlockKey(block)
-    const key = seen.has(baseKey) ? `${baseKey}:${index}` : baseKey
-    seen.add(key)
-    return key
-  })
 }
 
 function sameUnknownValue(left: unknown, right: unknown): boolean {
@@ -839,7 +506,6 @@ function sameAssistantBlock(
       return (
         left.callId === right.callId &&
         left.name === right.name &&
-        left.category === right.category &&
         left.output === right.output &&
         left.isError === right.isError &&
         left.running === right.running &&
@@ -859,114 +525,13 @@ function sameAssistantBlock(
   }
 }
 
-function groupAssistantBlocks(
-  blocks: Array<AssistantConversationBlock>,
-  keys: Array<string>
-) {
-  const result: Array<AssistantBlockGroup> = []
-  let start = -1
-
-  const flushExploreGroup = (end: number) => {
-    if (start < 0 || end < start) return
-
-    const groupedBlocks = blocks
-      .slice(start, end + 1)
-      .filter(isExploreToolBlock)
-    const first = groupedBlocks[0]
-
-    if (!first) {
-      start = -1
-      return
-    }
-
-    result.push({
-      type: "explore",
-      key: `explore:${keys[start]}`,
-      blocks: groupedBlocks,
-      blockKeys: groupedBlocks.map((block) => keys[blocks.indexOf(block)]!),
-    })
-
-    start = -1
-  }
-
-  blocks.forEach((block, index) => {
-    if (isExploreToolBlock(block)) {
-      if (start < 0) {
-        start = index
-      }
-      return
-    }
-
-    flushExploreGroup(index - 1)
-    result.push({
-      type: "block",
-      key: keys[index]!,
-      block,
-    })
-  })
-
-  flushExploreGroup(blocks.length - 1)
-  return result
-}
-
-function sameAssistantBlockGroupDescriptor(
-  left: AssistantBlockGroupDescriptor,
-  right: AssistantBlockGroupDescriptor
-) {
-  if (left.type !== right.type || left.key !== right.key) return false
-
-  if (left.type === "block" && right.type === "block") {
-    return (
-      left.blockKey === right.blockKey && left.blockType === right.blockType
-    )
-  }
-
-  if (left.type !== "explore" || right.type !== "explore") return false
-  if (left.blockKeys.length !== right.blockKeys.length) return false
-
-  for (let index = 0; index < left.blockKeys.length; index += 1) {
-    if (left.blockKeys[index] !== right.blockKeys[index]) return false
-  }
-
-  return true
-}
-
-function reconcileAssistantBlockGroupDescriptors(
-  previousGroups: Array<AssistantBlockGroupDescriptor>,
-  nextGroups: Array<AssistantBlockGroupDescriptor>
-) {
-  if (previousGroups.length === 0) return nextGroups
-
-  let changed = previousGroups.length !== nextGroups.length
-  const groups: Array<AssistantBlockGroupDescriptor> = []
-
-  for (let index = 0; index < nextGroups.length; index += 1) {
-    const previousGroup = previousGroups[index]
-    const nextGroup = nextGroups[index]
-
-    if (
-      previousGroup &&
-      nextGroup &&
-      sameAssistantBlockGroupDescriptor(previousGroup, nextGroup)
-    ) {
-      groups.push(previousGroup)
-      continue
-    }
-
-    changed = true
-    groups.push(nextGroup)
-  }
-
-  return changed ? groups : previousGroups
-}
-
 function buildAssistantBlockSnapshot(
   blocks: Array<AssistantConversationBlock>,
   previousSnapshot?: AssistantBlockStoreSnapshot
 ): AssistantBlockStoreSnapshot {
   const blockByKey = new Map<string, AssistantConversationBlock>()
   const keys = assistantBlockRenderKeys(blocks)
-  const fullGroups = groupAssistantBlocks(blocks, keys)
+  const groups = assistantBlockDescriptors(blocks, keys)
 
   blocks.forEach((block, index) => {
     const key = keys[index]!
@@ -979,27 +544,10 @@ function buildAssistantBlockSnapshot(
     )
   })
 
-  const groups = fullGroups.map((group): AssistantBlockGroupDescriptor => {
-    if (group.type === "block") {
-      return {
-        type: "block",
-        key: group.key,
-        blockKey: group.key,
-        blockType: group.block.type,
-      }
-    }
-
-    return {
-      type: "explore",
-      key: group.key,
-      blockKeys: group.blockKeys,
-    }
-  })
-
   return {
     blockByKey,
     groups: previousSnapshot
-      ? reconcileAssistantBlockGroupDescriptors(previousSnapshot.groups, groups)
+      ? reconcileAssistantBlockDescriptors(previousSnapshot.groups, groups)
       : groups,
     revision: (previousSnapshot?.revision ?? 0) + 1,
   }
@@ -1199,11 +747,6 @@ function createAssistantBlockStore(
 
   return {
     getBlock: (key) => snapshot.blockByKey.get(key),
-    getBlocks: (keys) =>
-      keys.flatMap((key) => {
-        const block = snapshot.blockByKey.get(key)
-        return block ? [block] : []
-      }),
     getGroups: () => snapshot.groups,
     setBlocks: (blocks) => {
       const previousSnapshot = snapshot
@@ -1286,13 +829,7 @@ function useAssistantBlock(store: AssistantBlockStore, key: string) {
   )
 }
 
-const EMPTY_TOOL_BLOCKS: Array<AssistantToolBlock> = []
 const EMPTY_TOOL_IMAGES: ConversationImage[] = []
-
-function toolImagesFromBlocks(blocks: Array<AssistantToolBlock>) {
-  const images = blocks.flatMap((block) => block.images ?? [])
-  return images.length > 0 ? images : EMPTY_TOOL_IMAGES
-}
 
 type ToolBlockHeaderSnapshot = {
   name: string | undefined
@@ -1304,15 +841,6 @@ type ToolBlockHeaderSnapshot = {
   editStats: EditDiffStatCounts | null
   /** The counts of a finished test run in a shell call. */
   testCounts: { passed: number; failed: number } | null
-  images: ConversationImage[]
-  openStateKey: string
-}
-
-type ExploreToolGroupHeaderSnapshot = {
-  count: number
-  summary: string
-  hasRunning: boolean
-  hasError: boolean
   images: ConversationImage[]
   openStateKey: string
 }
@@ -1442,111 +970,6 @@ function useAssistantToolBlockBody(
 
   return React.useSyncExternalStore(
     (listener) => (enabled ? store.subscribeBlocks([key], listener) : () => {}),
-    getSnapshot,
-    getSnapshot
-  )
-}
-
-function assistantToolBlocksFromStore(
-  store: AssistantBlockStore,
-  keys: Array<string>
-) {
-  return store.getBlocks(keys).filter(isExploreToolBlock)
-}
-
-function buildExploreToolGroupHeaderSnapshot(
-  blocks: Array<AssistantToolBlock>
-): ExploreToolGroupHeaderSnapshot {
-  return {
-    count: blocks.length,
-    summary: blocks.length > 0 ? exploreGroupSummary(blocks) : "",
-    hasRunning: blocks.some((block) => block.running),
-    hasError: blocks.some((block) => block.isError),
-    images: toolImagesFromBlocks(blocks),
-    openStateKey: rememberedToolCollapsibleStateKey(blocks[0], "explore"),
-  }
-}
-
-function sameExploreToolGroupHeaderSnapshot(
-  left: ExploreToolGroupHeaderSnapshot,
-  right: ExploreToolGroupHeaderSnapshot
-) {
-  return (
-    left.count === right.count &&
-    left.summary === right.summary &&
-    left.hasRunning === right.hasRunning &&
-    left.hasError === right.hasError &&
-    sameConversationImages(left.images, right.images) &&
-    left.openStateKey === right.openStateKey
-  )
-}
-
-function useAssistantToolGroupHeader(
-  store: AssistantBlockStore,
-  keys: Array<string>
-) {
-  const cacheRef = React.useRef<ExploreToolGroupHeaderSnapshot>({
-    count: 0,
-    summary: "",
-    hasRunning: false,
-    hasError: false,
-    images: EMPTY_TOOL_IMAGES,
-    openStateKey: "explore:missing",
-  })
-
-  const getSnapshot = () => {
-    const next = buildExploreToolGroupHeaderSnapshot(
-      assistantToolBlocksFromStore(store, keys)
-    )
-    const cache = cacheRef.current
-    if (sameExploreToolGroupHeaderSnapshot(cache, next)) return cache
-
-    cacheRef.current = next
-    return next
-  }
-
-  return React.useSyncExternalStore(
-    (listener) => store.subscribeBlocks(keys, listener),
-    getSnapshot,
-    getSnapshot
-  )
-}
-
-function sameReferenceSequence<T>(left: Array<T>, right: Array<T>) {
-  return (
-    left.length === right.length &&
-    left.every((item, index) => item === right[index])
-  )
-}
-
-function useAssistantToolGroupBodyBlocks(
-  store: AssistantBlockStore,
-  keys: Array<string>,
-  enabled: boolean
-) {
-  const cacheRef = React.useRef<{
-    keys: Array<string>
-    blocks: Array<AssistantToolBlock>
-  }>({ keys: [], blocks: EMPTY_TOOL_BLOCKS })
-
-  const getSnapshot = () => {
-    if (!enabled) return EMPTY_TOOL_BLOCKS
-
-    const blocks = assistantToolBlocksFromStore(store, keys)
-    const cache = cacheRef.current
-    if (
-      sameReferenceSequence(cache.keys, keys) &&
-      sameReferenceSequence(cache.blocks, blocks)
-    ) {
-      return cache.blocks
-    }
-
-    cacheRef.current = { keys, blocks }
-    return blocks
-  }
-
-  return React.useSyncExternalStore(
-    (listener) => (enabled ? store.subscribeBlocks(keys, listener) : () => {}),
     getSnapshot,
     getSnapshot
   )
@@ -2188,83 +1611,6 @@ function ToolBlockCardContent({
   )
 }
 
-/** The steps of an open explore group, from the store. */
-function ExploreToolGroupStoreBody({
-  blockKeys,
-  store,
-}: {
-  blockKeys: Array<string>
-  store: AssistantBlockStore
-}) {
-  const blocks = useAssistantToolGroupBodyBlocks(store, blockKeys, true)
-  return <ExploreToolGroupCardBody blocks={blocks} />
-}
-
-function ExploreToolGroupCardBody({
-  blocks,
-}: {
-  blocks: Array<AssistantToolBlock>
-}) {
-  return (
-    <ChainOfThoughtSteps>
-      {blocks.map((block, index) => {
-        const line = exploreToolLine(block)
-        const lineText = line.details || toolSummary(block)
-
-        return (
-          <ChainOfThoughtStep
-            key={
-              block.blockKey ||
-              block.callId ||
-              `${block.name || "tool"}:${index}`
-            }
-            isError={block.isError}
-            running={block.running}
-            label={line.label}
-            description={
-              "file" in line && line.file ? (
-                <FileLinkText reference={line.file}>{lineText}</FileLinkText>
-              ) : (
-                lineText
-              )
-            }
-          />
-        )
-      })}
-    </ChainOfThoughtSteps>
-  )
-}
-
-const ExploreToolGroupCard = React.memo(function ExploreToolGroupCard({
-  blockKeys,
-  store,
-}: {
-  blockKeys: Array<string>
-  store: AssistantBlockStore
-}) {
-  const header = useAssistantToolGroupHeader(store, blockKeys)
-  const [isOpen, setIsOpen] = useRememberedToolCollapsibleOpen(
-    header.openStateKey
-  )
-
-  if (header.count === 0) return null
-
-  return (
-    <ChainOfThought open={isOpen} onOpenChange={setIsOpen}>
-      <ChainOfThoughtHeader
-        isError={!header.hasRunning && header.hasError}
-        label={exploreGroupStatusLabel()}
-        running={header.hasRunning}
-        summary={header.summary}
-      />
-      <ChainOfThoughtContent>
-        <ExploreToolGroupStoreBody blockKeys={blockKeys} store={store} />
-      </ChainOfThoughtContent>
-      <ToolResultImages images={header.images} />
-    </ChainOfThought>
-  )
-})
-
 const CompactionBlockCard = React.memo(function CompactionBlockCard({
   block,
 }: {
@@ -2699,29 +2045,6 @@ function UserMessageFooter({
   )
 }
 
-function assistantBlockIsVisible({
-  block,
-  hideToolBlocks,
-}: {
-  block: Extract<ConversationItem, { kind: "assistant" }>["blocks"][number]
-  hideThinking: boolean
-  hideToolBlocks: boolean
-}) {
-  switch (block.type) {
-    case "text":
-      return Boolean(block.text.trim())
-    case "compaction":
-      return true
-    case "thinking":
-      // Hidden thinking shows as a collapsed row.
-      return Boolean(block.text.trim())
-    case "tool":
-      return !hideToolBlocks && !isPendingUnclassifiedToolBlock(block)
-    default:
-      return false
-  }
-}
-
 export function assistantMessageHasVisibleBlocks({
   item,
   hideThinking,
@@ -2749,25 +2072,16 @@ const AssistantBlockGroupView = React.memo(function AssistantBlockGroupView({
   store,
   streaming,
 }: {
-  descriptor: AssistantBlockGroupDescriptor
+  descriptor: AssistantBlockDescriptor
   hideThinking: boolean
   /** The last block of the message: it is the one that streams. */
   isLast: boolean
   store: AssistantBlockStore
   streaming: boolean
 }) {
-  if (descriptor.type === "explore") {
-    return (
-      <AssistantExploreBlockGroupView
-        blockKeys={descriptor.blockKeys}
-        store={store}
-      />
-    )
-  }
-
   const blockView = (
     <AssistantSingleBlockGroupView
-      blockKey={descriptor.blockKey}
+      blockKey={descriptor.key}
       blockType={descriptor.blockType}
       hideThinking={hideThinking}
       isLast={isLast}
@@ -2778,30 +2092,12 @@ const AssistantBlockGroupView = React.memo(function AssistantBlockGroupView({
 
   const blockProps = {
     "data-conversation-assistant-block": "true",
-    "data-conversation-assistant-block-key": descriptor.blockKey,
+    "data-conversation-assistant-block-key": descriptor.key,
     "data-conversation-assistant-block-type": descriptor.blockType,
   }
 
   return <div {...blockProps}>{blockView}</div>
 })
-
-function AssistantExploreBlockGroupView({
-  blockKeys,
-  store,
-}: {
-  blockKeys: Array<string>
-  store: AssistantBlockStore
-}) {
-  return (
-    <div
-      data-conversation-assistant-block="true"
-      data-conversation-assistant-block-key={`explore:${blockKeys.join("|")}`}
-      data-conversation-assistant-block-type="tool"
-    >
-      <ExploreToolGroupCard blockKeys={blockKeys} store={store} />
-    </div>
-  )
-}
 
 function AssistantSingleBlockGroupView({
   blockKey,
@@ -2967,11 +2263,11 @@ const COMPACT_ROWS_CLASS =
  * The index of the first group of the final answer: the text blocks at the
  * end. -1 when there is no answer, or nothing before it.
  */
-function finalAnswerStartIndex(groups: Array<AssistantBlockGroupDescriptor>) {
+function finalAnswerStartIndex(groups: Array<AssistantBlockDescriptor>) {
   let index = groups.length
   while (index > 0) {
     const group = groups[index - 1]
-    if (group?.type !== "block" || group.blockType !== "text") break
+    if (group?.blockType !== "text") break
     index -= 1
   }
   return index > 0 && index < groups.length ? index : -1
@@ -3022,7 +2318,7 @@ function AssistantBlockGroupsView({
   const workGroups = answerStart > 0 ? renderedBlocks.slice(0, answerStart) : []
 
   const lastGroup = renderedBlocks.at(-1)
-  const renderGroup = (descriptor: AssistantBlockGroupDescriptor) => (
+  const renderGroup = (descriptor: AssistantBlockDescriptor) => (
     <AssistantBlockGroupView
       key={descriptor.key}
       descriptor={descriptor}

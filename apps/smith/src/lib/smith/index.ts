@@ -192,7 +192,6 @@ export type ToolBlock = {
   callId?: string
   name?: string
   args?: unknown
-  category?: "explore"
   output: string
   details?: unknown
   /** Images in the tool result, for example from reading an image file. */
