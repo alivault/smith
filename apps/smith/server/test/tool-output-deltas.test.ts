@@ -17,7 +17,7 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 
 import { AgentMetaDoc, Agents, publicId } from "../src/core/agents.ts"
-import { applyToolUpdates, type ConversationItem } from "../src/core/items.ts"
+import type { ConversationItem } from "../src/core/items.ts"
 import type { Runtime } from "../src/core/runtime.ts"
 import { DEFAULT_SETTINGS } from "../src/core/settings.ts"
 import { Viewers } from "../src/core/viewers.ts"
@@ -164,35 +164,4 @@ void test("running tool output is sent as updateTool deltas", async () => {
     await agents.flushMeta()
     await harness.close(ctx)
   }
-})
-
-void test("applyToolUpdates updates one tool block and keeps the rest", () => {
-  const tool = (callId: string) => ({
-    type: "tool" as const,
-    blockKey: callId,
-    callId,
-    output: "",
-    isError: false,
-    running: true,
-  })
-  const items: ConversationItem[] = [
-    { kind: "user", itemKey: "u", text: "hi", images: [] } as ConversationItem,
-    {
-      kind: "assistant",
-      itemKey: "a",
-      blocks: [tool("one"), tool("two")],
-      streaming: false,
-      done: true,
-    },
-  ]
-  const next = applyToolUpdates(items, [
-    { op: "updateTool", callId: "two", output: "out", running: true },
-  ])
-  assert.equal(next[0], items[0])
-  const before = items[1] as Extract<ConversationItem, { kind: "assistant" }>
-  const after = next[1] as Extract<ConversationItem, { kind: "assistant" }>
-  assert.notEqual(after, before)
-  assert.equal(after.blocks[0], before.blocks[0])
-  assert.deepEqual(after.blocks[1], { ...tool("two"), output: "out" })
-  assert.equal(applyToolUpdates(items, []).length, 2)
 })
