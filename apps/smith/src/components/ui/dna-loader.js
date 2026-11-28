@@ -17,6 +17,7 @@ const SHADOW_PLANE_START_Z = -2.5
 const SHADOW_PLANE_STEP_Z = 0.5
 const SHADOW_PLANE_COUNT = 10
 const SHADOW_PLANE_OPACITY = 0.13
+const SUPERSAMPLE = 2
 const SHAPE_SCALE = 3.2
 const PROJECTION_EDGE_PADDING = 0.5
 const PROJECTION_SAMPLE_COUNT = 24
@@ -335,7 +336,10 @@ function shadowPlaneTintAmount(z) {
 }
 
 function syncCanvasSize(state, width, height) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  // Twice the screen resolution: the strand is a few device pixels wide and
+  // drawn from many small segments, so at 1× its edges and seams look
+  // aliased. The browser scales the canvas down, which smooths them.
+  const dpr = Math.min(window.devicePixelRatio || 1, 2) * SUPERSAMPLE
   const pixelWidth = Math.max(1, Math.round(width * dpr))
   const pixelHeight = Math.max(1, Math.round(height * dpr))
 
