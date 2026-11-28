@@ -490,6 +490,8 @@ type PendingCompactionRowState = {
   phase: "idle" | "pending" | "resolved"
   rowKey: string
   baselineKey: string | null
+  /** The last group when the compaction began; the pending row stays after it. */
+  afterKey: string | null
   count: number
   rowKeysByGroupKey: Map<string, string>
 }
@@ -502,6 +504,28 @@ function lastCompactionGroupKey(
     if (group?.kind === "compaction") return group.key
   }
   return null
+}
+
+/**
+ * Put the pending row after the group that was last when the compaction
+ * began. A message sent while it runs comes below the row, as the last row,
+ * so the scroller anchors it as a new turn and it stays in view.
+ */
+function withPendingRow(
+  groups: Array<RenderConversationGroupDescriptor>,
+  rowKey: string,
+  afterKey: string | null
+): Array<RenderConversationGroupDescriptor> {
+  const row: RenderConversationGroupDescriptor = {
+    kind: "compaction",
+    key: rowKey,
+    pending: true,
+  }
+  const index = afterKey
+    ? groups.findIndex((group) => group.key === afterKey)
+    : -1
+  if (index < 0) return [...groups, row]
+  return [...groups.slice(0, index + 1), row, ...groups.slice(index + 1)]
 }
 
 // While compaction runs, add a pending compaction row at the end. The
@@ -524,6 +548,7 @@ export function usePendingCompactionRow(
       phase: "idle",
       rowKey: "",
       baselineKey: null,
+      afterKey: null,
       count: 0,
       rowKeysByGroupKey: new Map(),
     }))
@@ -540,6 +565,7 @@ export function usePendingCompactionRow(
       phase: "pending",
       rowKey: `compaction-pending:${count}`,
       baselineKey: lastKey,
+      afterKey: groups.at(-1)?.key ?? null,
     }
   }
   if (state.phase === "pending" && lastKey && lastKey !== state.baselineKey) {
@@ -555,8 +581,8 @@ export function usePendingCompactionRow(
   }
 
   const pendingRowKey = state.phase === "pending" ? state.rowKey : null
-  const renderedGroups: Array<RenderConversationGroupDescriptor> = pendingRowKey
-    ? [...groups, { kind: "compaction", key: pendingRowKey, pending: true }]
+  const renderedGroups = pendingRowKey
+    ? withPendingRow(groups, pendingRowKey, state.afterKey)
     : groups
   const rowKeysByGroupKey = state.rowKeysByGroupKey
   const rowKey = (group: RenderConversationGroupDescriptor) =>
