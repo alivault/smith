@@ -553,7 +553,7 @@ function AppShellConversationFrame(props: AppShellConversationFrameProps) {
       key={agentScrollKey}
       autoScroll={props.autoScrollEnabled}
       defaultScrollPosition="end"
-      scrollPreviousItemPeek={64}
+      scrollPreviousItemPeek={0}
     >
       <AppShellConversationScroller
         {...props}
