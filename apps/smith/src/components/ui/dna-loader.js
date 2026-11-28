@@ -238,23 +238,46 @@ function projectPoint(point, focalLength, centerX, centerY) {
   }
 }
 
+let colorProbe = null
+const colorCache = new Map()
+
+/**
+ * Any CSS color (rgb, hex, oklch, ...) as { r, g, b, a } in 0–255 and 0–1.
+ * A 1×1 canvas converts it, so modern color spaces such as Smith's oklch
+ * theme colors work; the old parser read `oklch(1 0 0)` (white) as black.
+ */
 function parseColor(value) {
   if (!value || value === "transparent") {
     return { r: 0, g: 0, b: 0, a: 0 }
   }
+  const cached = colorCache.get(value)
+  if (cached) return cached
 
-  const parts = typeof value === "string" ? value.match(/[\d.]+/g) : null
-  if (!parts || parts.length < 3) {
-    return { r: 255, g: 255, b: 255, a: 1 }
+  colorProbe ??= document
+    .createElement("canvas")
+    .getContext("2d", { willReadFrequently: true })
+  let color = { r: 255, g: 255, b: 255, a: 1 }
+  if (colorProbe) {
+    colorProbe.clearRect(0, 0, 1, 1)
+    colorProbe.fillStyle = "#000"
+    colorProbe.fillStyle = value
+    colorProbe.fillRect(0, 0, 1, 1)
+    const [r, g, b, alpha] = colorProbe.getImageData(0, 0, 1, 1).data
+    // getImageData gives unpremultiplied values.
+    color = { r, g, b, a: alpha / 255 }
   }
+  if (colorCache.size > 64) colorCache.clear()
+  colorCache.set(value, color)
+  return color
+}
 
-  const [r, g, b, alpha = "1"] = parts
-  return {
-    r: Number(r),
-    g: Number(g),
-    b: Number(b),
-    a: Number(alpha),
+/** The relative luminance (0–1) of a color, as in WCAG. */
+function relativeLuminance({ r, g, b }) {
+  const channel = (value) => {
+    const c = value / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 
 function rgbaString(color, alphaMultiplier = 1) {
@@ -583,9 +606,12 @@ function drawMesh(ctx, state, projection, color, backdropColor) {
   )
   const ribbonSegments = buildRibbonSegments(ribbonSamples)
   if (ribbonSegments.length === 0) return
+  // The far side fades into the backdrop. A light backdrop washes a color
+  // out faster than a dark one, so the fade is weaker there.
+  const depthFade = relativeLuminance(backdropColor) > 0.5 ? 0.55 : 1
 
   for (const segment of ribbonSegments) {
-    const tintAmount = shadowPlaneTintAmount(segment.z)
+    const tintAmount = shadowPlaneTintAmount(segment.z) * depthFade
     const fillColor = mixColor(color, backdropColor, tintAmount)
     ctx.fillStyle = rgbaString(fillColor, state.meshOpacity)
     ctx.beginPath()
